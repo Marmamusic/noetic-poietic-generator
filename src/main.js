@@ -1,13 +1,14 @@
-// Main Orchestrator for the Noetic Poietic Generator (v2)
+// Main Orchestrator for the Noetic Poietic Generator (v3 — Text-First Palimpsest + Multi-Provider LLM)
 
-import { TRANSLATIONS } from "./i18n.js?v=2";
-import { SemanticEngine } from "./semanticEngine.js?v=2";
-import { TopologyEngine } from "./topologyEngine.js?v=2";
-import { MirrorEngine } from "./mirrorEngine.js?v=2";
-import { SwarmEngine } from "./swarmEngine.js?v=2";
-import { SyncEngine } from "./syncEngine.js?v=2";
-import { ReplayEngine } from "./replayEngine.js?v=2";
-import { NoeticRenderer } from "./renderer.js?v=2";
+import { TRANSLATIONS } from "./i18n.js?v=3";
+import { SemanticEngine } from "./semanticEngine.js?v=3";
+import { TopologyEngine } from "./topologyEngine.js?v=3";
+import { MirrorEngine } from "./mirrorEngine.js?v=3";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=3";
+import { SwarmEngine } from "./swarmEngine.js?v=3";
+import { SyncEngine } from "./syncEngine.js?v=3";
+import { ReplayEngine } from "./replayEngine.js?v=3";
+import { NoeticRenderer } from "./renderer.js?v=3";
 
 const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -15,6 +16,7 @@ const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 const semantic = new SemanticEngine();
 const topology = new TopologyEngine(semantic);
 const mirror = new MirrorEngine(topology);
+const palimpsest = new PalimpsestEngine(topology, mirror);
 const swarm = new SwarmEngine(topology, semantic);
 const replay = new ReplayEngine(450);
 
@@ -25,8 +27,10 @@ const renderer = new NoeticRenderer(canvas);
 let currentLang = "fr";
 let currentStance = "assert";
 let currentIntensity = 1.0;
+let viewMode = "palimpsest"; // "palimpsest" | "terrain" | "mosaic"
 let selectedArtifact = null; // { kind, id }
 let ghostPreview = null;
+let hoveredAnchors = new Set();
 let lastFrameTime = performance.now();
 let lastMirrorUpdate = 0;
 let lastReplayCapture = 0;
@@ -40,6 +44,12 @@ const el = {
   valTension: document.getElementById("val-tension"),
   valSimplicity: document.getElementById("val-simplicity"),
   valCells: document.getElementById("val-cells"),
+  palStage: document.getElementById("palimpsest-stage"),
+  palStream: document.getElementById("pal-stream"),
+  palGestation: document.getElementById("pal-gestation"),
+  palLlmLed: document.getElementById("pal-llm-led"),
+  palEngineStatus: document.getElementById("pal-engine-status"),
+  btnPalConnect: document.getElementById("btn-pal-connect"),
   noemeMirror: document.getElementById("noeme-mirror"),
   noemeText: document.getElementById("noeme-text"),
   noemeDiff: document.getElementById("noeme-diff"),
@@ -49,6 +59,7 @@ const el = {
   cellForm: document.getElementById("cell-form"),
   stanceBtns: Array.from(document.querySelectorAll(".stance-btn")),
   intensityBtns: Array.from(document.querySelectorAll(".int-btn")),
+  btnModePalimpsest: document.getElementById("btn-mode-palimpsest"),
   btnTopoManifold: document.getElementById("btn-topo-manifold"),
   btnTopoSpiral: document.getElementById("btn-topo-spiral"),
   btnToggleMirror: document.getElementById("btn-toggle-mirror"),
@@ -72,9 +83,14 @@ const el = {
   btnRoomLeave: document.getElementById("btn-room-leave"),
   roomStatus: document.getElementById("room-status"),
   btnLlmPanel: document.getElementById("btn-llm-panel"),
+  llmLed: document.getElementById("llm-led"),
+  presetBtns: Array.from(document.querySelectorAll(".preset-btn")),
   inputLlmEndpoint: document.getElementById("input-llm-endpoint"),
   inputLlmModel: document.getElementById("input-llm-model"),
   inputLlmKey: document.getElementById("input-llm-key"),
+  sliderDelay: document.getElementById("slider-delay"),
+  labelDelayVal: document.getElementById("label-delay-val"),
+  checkRememberKey: document.getElementById("check-remember-key"),
   btnLlmToggle: document.getElementById("btn-llm-toggle"),
   btnLlmTrigger: document.getElementById("btn-llm-trigger"),
   llmStatus: document.getElementById("llm-status"),
@@ -107,6 +123,134 @@ function t() {
   return TRANSLATIONS[currentLang] || TRANSLATIONS.fr;
 }
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// =========================================================================
+// FLIP-ANIMATED MORPHOGENETIC PALIMPSEST RENDERER
+// Preserves DOM nodes by stable sentence ID so rearrangements glide smoothly,
+// emerging sentences focus in, morphing sentences cross-dissolve old wording,
+// and faded sentences linger softly before vanishing.
+// =========================================================================
+const sentenceDomMap = new Map();
+
+function renderPalimpsestDOM(sentences, { isGestating = false } = {}) {
+  el.palGestation.classList.toggle("hidden", !isGestating);
+
+  // 1. FIRST: measure current bounding rects of existing sentence nodes
+  const firstRects = new Map();
+  for (const [id, node] of sentenceDomMap.entries()) {
+    firstRects.set(id, node.getBoundingClientRect());
+  }
+
+  const keepIds = new Set(sentences.map((s) => s.id));
+
+  // Remove expired sentences no longer in array
+  for (const [id, node] of sentenceDomMap.entries()) {
+    if (!keepIds.has(id)) {
+      node.remove();
+      sentenceDomMap.delete(id);
+    }
+  }
+
+  // 2. Reconcile & append in new order
+  for (const s of sentences) {
+    let node = sentenceDomMap.get(s.id);
+    if (!node) {
+      node = document.createElement("article");
+      node.className = "pal-sentence";
+      node.dataset.id = s.id;
+
+      // Hovering a sentence illuminates its anchoring concepts on the terrain underneath!
+      node.addEventListener("mouseenter", () => {
+        hoveredAnchors = new Set((node._anchors || []).map((a) => a.toLowerCase()));
+      });
+      node.addEventListener("mouseleave", () => {
+        hoveredAnchors.clear();
+      });
+
+      sentenceDomMap.set(s.id, node);
+    }
+
+    node._anchors = s.anchors || [];
+    node.dataset.role = s.role || "body";
+
+    const nextClasses = ["pal-sentence"];
+    if (s.status === "emerging") nextClasses.push("emerging");
+    else if (s.status === "morphing") nextClasses.push("morphing");
+    else if (s.status === "lingering") nextClasses.push("lingering");
+    node.className = nextClasses.join(" ");
+
+    // Only rewrite innerHTML when text / ghost / anchors actually changed so animations aren't reset!
+    const sig = `${s.text}|${s.prevText || ""}|${(s.anchors || []).join(",")}|${s.status}`;
+    if (node.dataset.sig !== sig) {
+      node.dataset.sig = sig;
+      const ghostHtml =
+        s.status === "morphing" && s.prevText
+          ? `<span class="pal-ghost">${escapeHtml(s.prevText)}</span>`
+          : "";
+      const anchorsHtml =
+        s.anchors && s.anchors.length > 0
+          ? `<div class="pal-anchors">↳ ${escapeHtml(s.anchors.join(" · "))}</div>`
+          : "";
+      node.innerHTML = `${ghostHtml}<p class="pal-text">${escapeHtml(s.text)}</p>${anchorsHtml}`;
+    }
+
+    el.palStream.appendChild(node);
+  }
+
+  // 3. LAST + INVERT + PLAY: smooth vertical glide for rearranged sentences
+  for (const [id, node] of sentenceDomMap.entries()) {
+    const prev = firstRects.get(id);
+    if (!prev) continue;
+    const next = node.getBoundingClientRect();
+    const dy = prev.top - next.top;
+    if (Math.abs(dy) > 2) {
+      node.style.transition = "none";
+      node.style.transform = `translateY(${dy}px)`;
+      // Force reflow then glide smoothly to new order
+      void node.offsetHeight;
+      node.style.transition = "";
+      node.style.transform = "";
+    }
+  }
+}
+
+palimpsest.onChange = (sentences, meta) => {
+  if (!replay.isScrubbing) {
+    renderPalimpsestDOM(sentences, meta);
+  }
+};
+
+palimpsest.onStatus = (msg, isLlmActive) => {
+  el.llmStatus.textContent = msg;
+  el.llmLed.classList.toggle("ready", Boolean(isLlmActive));
+  el.palLlmLed.classList.toggle("ready", Boolean(isLlmActive));
+  el.palEngineStatus.textContent = isLlmActive ? msg : t().palLocalHint;
+};
+
+// =========================================================================
+// VIEW MODE SWITCHING (Palimpseste | Terrain | Mosaïque)
+// =========================================================================
+function setViewMode(mode) {
+  viewMode = mode;
+  document.body.classList.toggle("mode-palimpsest", mode === "palimpsest");
+  el.palStage.classList.toggle("stage-hidden", mode !== "palimpsest");
+  el.noemeMirror.classList.toggle("hidden", mode === "palimpsest");
+
+  el.btnModePalimpsest.classList.toggle("active", mode === "palimpsest");
+  el.btnTopoManifold.classList.toggle("active", mode === "terrain");
+  el.btnTopoSpiral.classList.toggle("active", mode === "mosaic");
+
+  topology.topologyMode = mode === "mosaic" ? "spiral" : "manifold";
+  if (mode !== "palimpsest") hoveredAnchors.clear();
+}
+
 function applyTranslations() {
   const dict = t();
   document.documentElement.lang = currentLang;
@@ -118,7 +262,10 @@ function applyTranslations() {
   el.helpContent.innerHTML = dict.helpHtml;
   el.btnLang.textContent = currentLang.toUpperCase();
   el.btnSwarmPause.textContent = swarm.paused ? dict.resume : dict.pause;
-  el.btnLlmToggle.textContent = mirror.llmEnabled ? dict.llmDisable : dict.llmEnable;
+  el.btnLlmToggle.textContent = palimpsest.llmEnabled ? dict.llmDisable : dict.llmEnable;
+  if (!palimpsest.llmEnabled) {
+    el.palEngineStatus.textContent = dict.palLocalHint;
+  }
   topology.refreshCompassLabels(currentLang);
   mirror.update(currentLang);
   updateNeuralButtonUI();
@@ -178,7 +325,8 @@ const sync = new SyncEngine(localId, {
     }
     mirror.update(currentLang);
     updateNoemeUI();
-    replay.capture(topology, mirror, `remote:${cell.term}`);
+    palimpsest.scheduleGestation(currentLang, { source: "human", term: cell.term, stance: cell.stance });
+    replay.capture(topology, mirror, palimpsest, `remote:${cell.term}`);
   },
   onRemoteLeave: (id) => {
     topology.removeCell(id);
@@ -212,7 +360,6 @@ function updateTokenCounterAndGhost() {
   el.tokenCounter.textContent = `${words.length}/3`;
   el.tokenCounter.classList.toggle("over", words.length > 3);
 
-  // Live Ghost Preview before pressing Enter!
   const draft = sanitizeConcept(raw);
   ghostPreview = draft ? topology.computeGhostPreview(localId, draft, currentStance) : null;
 }
@@ -238,7 +385,6 @@ async function commitLocalGesture(rawTerm, stance = currentStance, intensity = c
     isLocal: true,
   });
 
-  // Notify swarm so agents perceptibly respond to the human's conceptual gesture
   swarm.notifyHumanGesture(term);
 
   el.leverageReadout.textContent = `ΔM ${leverage.toFixed(2)}`;
@@ -257,7 +403,11 @@ async function commitLocalGesture(rawTerm, stance = currentStance, intensity = c
   mirror.update(currentLang);
   mirror.recordHumanInflection(prevNoeme, term, leverage);
   updateNoemeUI();
-  replay.capture(topology, mirror, `you:${term} (${stance})`);
+
+  // Trigger contemplative delayed morphogenetic reorganization of the living emerging text!
+  palimpsest.scheduleGestation(currentLang, { source: "human", term, stance, leverage });
+
+  replay.capture(topology, mirror, palimpsest, `you:${term} (${stance})`);
   syncReplaySlider();
   if (selectedArtifact) renderInspector();
 }
@@ -312,17 +462,9 @@ el.intensityBtns.forEach((btn) => {
   });
 });
 
-el.btnTopoManifold.addEventListener("click", () => {
-  topology.topologyMode = "manifold";
-  el.btnTopoManifold.classList.add("active");
-  el.btnTopoSpiral.classList.remove("active");
-});
-
-el.btnTopoSpiral.addEventListener("click", () => {
-  topology.topologyMode = "spiral";
-  el.btnTopoSpiral.classList.add("active");
-  el.btnTopoManifold.classList.remove("active");
-});
+el.btnModePalimpsest.addEventListener("click", () => setViewMode("palimpsest"));
+el.btnTopoManifold.addEventListener("click", () => setViewMode("terrain"));
+el.btnTopoSpiral.addEventListener("click", () => setViewMode("mosaic"));
 
 el.btnToggleMirror.addEventListener("click", () => {
   mirror.visible = !mirror.visible;
@@ -371,7 +513,8 @@ el.btnSwarmPulse.addEventListener("click", () => {
   swarm.perturb(() => {});
   mirror.update(currentLang);
   updateNoemeUI();
-  replay.capture(topology, mirror, "bifurcation");
+  palimpsest.scheduleGestation(currentLang, { source: "bifurcation" });
+  replay.capture(topology, mirror, palimpsest, "bifurcation");
   syncReplaySlider();
   showToast(t().toasts.perturbed);
 });
@@ -420,47 +563,98 @@ el.btnRoomLeave.addEventListener("click", () => {
   window.history.replaceState({}, "", url.toString());
 });
 
-// Optional BYOK Overhead LLM Mirror controls
+// =========================================================================
+// MULTI-PROVIDER LLM PALIMPSEST CONTROLS (Gemini, OpenAI, OpenRouter, Groq, Ollama)
+// =========================================================================
 el.btnLlmPanel.addEventListener("click", () => togglePopover("popover-llm"));
+el.btnPalConnect.addEventListener("click", () => togglePopover("popover-llm"));
 
-const savedSessionKey = sessionStorage.getItem("npg_llm_key");
-if (savedSessionKey) el.inputLlmKey.value = savedSessionKey;
+function selectPresetUI(presetId) {
+  const p = palimpsest.applyPreset(presetId);
+  el.presetBtns.forEach((b) => b.classList.toggle("active", b.dataset.preset === p.id));
+  el.inputLlmEndpoint.value = p.endpoint;
+  el.inputLlmModel.value = p.model;
+  el.inputLlmKey.placeholder = p.keyPlaceholder;
+}
 
-mirror.onLlmStatus = (msg) => {
-  el.llmStatus.textContent = msg;
-  updateNoemeUI();
-};
+el.presetBtns.forEach((btn) => {
+  btn.addEventListener("click", () => selectPresetUI(btn.dataset.preset));
+});
+
+el.sliderDelay.addEventListener("input", () => {
+  const sec = Number(el.sliderDelay.value);
+  el.labelDelayVal.textContent = `${sec.toFixed(1)}s`;
+  palimpsest.gestationDelayMs = Math.round(sec * 1000);
+});
+
+function syncLlmFormToEngine() {
+  const preset = LLM_PRESETS[palimpsest.providerId] || LLM_PRESETS.gemini;
+  palimpsest.config.protocol = preset.protocol;
+  palimpsest.config.endpoint = el.inputLlmEndpoint.value.trim();
+  palimpsest.config.model = el.inputLlmModel.value.trim();
+  palimpsest.config.apiKey = el.inputLlmKey.value.trim();
+
+  // Persist in sessionStorage, and optionally localStorage if opted in
+  const payload = JSON.stringify({
+    providerId: palimpsest.providerId,
+    endpoint: palimpsest.config.endpoint,
+    model: palimpsest.config.model,
+    apiKey: palimpsest.config.apiKey,
+    delaySec: Number(el.sliderDelay.value),
+  });
+  sessionStorage.setItem("npg_llm_cfg", payload);
+  if (el.checkRememberKey.checked) {
+    localStorage.setItem("npg_llm_cfg", payload);
+  } else {
+    localStorage.removeItem("npg_llm_cfg");
+  }
+}
+
+function restoreSavedLlmConfig() {
+  const raw = localStorage.getItem("npg_llm_cfg") || sessionStorage.getItem("npg_llm_cfg");
+  if (!raw) return;
+  try {
+    const cfg = JSON.parse(raw);
+    if (cfg.providerId && LLM_PRESETS[cfg.providerId]) {
+      selectPresetUI(cfg.providerId);
+    }
+    if (cfg.endpoint) el.inputLlmEndpoint.value = cfg.endpoint;
+    if (cfg.model) el.inputLlmModel.value = cfg.model;
+    if (cfg.apiKey) el.inputLlmKey.value = cfg.apiKey;
+    if (typeof cfg.delaySec === "number") {
+      el.sliderDelay.value = String(cfg.delaySec);
+      el.labelDelayVal.textContent = `${cfg.delaySec.toFixed(1)}s`;
+      palimpsest.gestationDelayMs = Math.round(cfg.delaySec * 1000);
+    }
+    el.checkRememberKey.checked = Boolean(localStorage.getItem("npg_llm_cfg"));
+  } catch {
+    /* ignore corrupt storage */
+  }
+}
 
 el.btnLlmToggle.addEventListener("click", () => {
-  mirror.llmConfig.endpoint = el.inputLlmEndpoint.value.trim();
-  mirror.llmConfig.model = el.inputLlmModel.value.trim();
-  mirror.llmConfig.apiKey = el.inputLlmKey.value.trim();
-  if (mirror.llmConfig.apiKey) {
-    sessionStorage.setItem("npg_llm_key", mirror.llmConfig.apiKey);
-  } else {
-    sessionStorage.removeItem("npg_llm_key");
-  }
+  syncLlmFormToEngine();
+  palimpsest.llmEnabled = !palimpsest.llmEnabled;
+  el.btnLlmPanel.classList.toggle("active", palimpsest.llmEnabled);
+  el.btnLlmToggle.textContent = palimpsest.llmEnabled ? t().llmDisable : t().llmEnable;
+  el.llmLed.classList.toggle("ready", palimpsest.llmEnabled);
+  el.palLlmLed.classList.toggle("ready", palimpsest.llmEnabled);
+  showToast(palimpsest.llmEnabled ? t().toasts.llmEnabled : t().toasts.llmDisabled);
 
-  mirror.llmEnabled = !mirror.llmEnabled;
-  el.btnLlmPanel.classList.toggle("active", mirror.llmEnabled);
-  el.btnLlmToggle.textContent = mirror.llmEnabled ? t().llmDisable : t().llmEnable;
-  showToast(mirror.llmEnabled ? t().toasts.llmEnabled : t().toasts.llmDisabled);
-  if (mirror.llmEnabled) {
-    mirror.reflectWithLLM(currentLang);
+  if (palimpsest.llmEnabled) {
+    palimpsest.scheduleGestation(currentLang, { source: "llm-connect" }, true);
   } else {
-    mirror.update(currentLang);
-    updateNoemeUI();
+    el.palEngineStatus.textContent = t().palLocalHint;
+    el.llmStatus.textContent = t().palLocalHint;
   }
 });
 
 el.btnLlmTrigger.addEventListener("click", () => {
-  mirror.llmConfig.endpoint = el.inputLlmEndpoint.value.trim();
-  mirror.llmConfig.model = el.inputLlmModel.value.trim();
-  mirror.llmConfig.apiKey = el.inputLlmKey.value.trim();
-  mirror.llmEnabled = true;
+  syncLlmFormToEngine();
+  palimpsest.llmEnabled = true;
   el.btnLlmPanel.classList.add("active");
   el.btnLlmToggle.textContent = t().llmDisable;
-  mirror.reflectWithLLM(currentLang);
+  palimpsest.scheduleGestation(currentLang, { source: "manual-pulse" }, true);
 });
 
 // Language toggle
@@ -468,6 +662,7 @@ el.btnLang.addEventListener("click", () => {
   currentLang = currentLang === "fr" ? "en" : "fr";
   swarm.setLanguage(currentLang, true);
   applyTranslations();
+  palimpsest.seedInitial(currentLang);
 });
 
 // Help modal
@@ -509,11 +704,8 @@ function renderInspector() {
       if (e.a !== cell.id && e.b !== cell.id) continue;
       const other = topology.cells.get(e.a === cell.id ? e.b : e.a);
       if (!other) continue;
-      if (e.type === "tension") {
-        tenLinks.push({ term: other.term, weight: e.tension });
-      } else {
-        resLinks.push({ term: other.term, weight: e.resonance });
-      }
+      if (e.type === "tension") tenLinks.push({ term: other.term, weight: e.tension });
+      else resLinks.push({ term: other.term, weight: e.resonance });
     }
     resLinks.sort((a, b) => b.weight - a.weight);
     tenLinks.sort((a, b) => b.weight - a.weight);
@@ -619,14 +811,6 @@ function renderInspector() {
   }
 }
 
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 // Canvas Pan / Zoom / Click-to-Inspect
 let dragging = false;
 let dragMoved = false;
@@ -701,6 +885,7 @@ function exitReplayScrub() {
   replay.isScrubbing = false;
   el.replayLabel.textContent = "LIVE";
   el.replayLabel.classList.remove("scrubbing");
+  renderPalimpsestDOM(palimpsest.sentences, { isGestating: palimpsest.isGestating });
   updateNoemeUI();
   syncReplaySlider();
 }
@@ -759,6 +944,8 @@ function updateTelemetryUI(tele) {
 
 // Initialization
 function init() {
+  restoreSavedLlmConfig();
+
   const initialConcept = "transindividuation";
   el.inputConcept.value = initialConcept;
 
@@ -774,11 +961,12 @@ function init() {
   swarm.setLanguage(currentLang, false);
   swarm.setTargetCount(16);
 
-  // Settle initial terrain smoothly
   for (let i = 0; i < 45; i++) topology.stepPhysics(0.025);
   applyTranslations();
+  setViewMode("palimpsest");
+  palimpsest.seedInitial(currentLang);
   el.tokenCounter.textContent = "1/3";
-  replay.capture(topology, mirror, "init");
+  replay.capture(topology, mirror, palimpsest, "init");
   syncReplaySlider();
 
   const params = new URLSearchParams(window.location.search);
@@ -791,6 +979,8 @@ function init() {
   requestAnimationFrame(loop);
 }
 
+let lastScrubRendered = -1;
+
 function loop(now) {
   const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
   lastFrameTime = now;
@@ -800,6 +990,10 @@ function loop(now) {
     if (frame) {
       updateTelemetryUI(frame.telemetry);
       updateNoemeUI(frame.noeme);
+      if (lastScrubRendered !== replay.scrubIndex && Array.isArray(frame.palimpsest)) {
+        renderPalimpsestDOM(frame.palimpsest, { isGestating: false });
+        lastScrubRendered = replay.scrubIndex;
+      }
       renderer.render({
         cells: frame.cells,
         edges: frame.edges,
@@ -810,12 +1004,14 @@ function loop(now) {
         telemetry: frame.telemetry,
         compass: frame.compass,
         ghostPreview: null,
+        highlightedTerms: hoveredAnchors,
         topologyBlend: topology.topologyBlend,
         showMirror: mirror.visible,
         time: now,
       });
     }
   } else {
+    lastScrubRendered = -1;
     swarm.tick(dt, () => {
       if (semantic.mode === "neural") {
         topology.refreshEmbeddingsAsync();
@@ -823,6 +1019,7 @@ function loop(now) {
     });
 
     topology.stepPhysics(dt);
+    palimpsest.tick(now, currentLang);
 
     if (now - lastMirrorUpdate > 360) {
       topology.refreshCompassLabels(currentLang);
@@ -832,8 +1029,8 @@ function loop(now) {
       lastMirrorUpdate = now;
     }
 
-    if (now - lastReplayCapture > 2200) {
-      replay.capture(topology, mirror);
+    if (now - lastReplayCapture > 2500) {
+      replay.capture(topology, mirror, palimpsest);
       syncReplaySlider();
       lastReplayCapture = now;
     }
@@ -848,6 +1045,7 @@ function loop(now) {
       telemetry: topology.telemetry,
       compass: topology.compass,
       ghostPreview,
+      highlightedTerms: hoveredAnchors,
       topologyBlend: topology.topologyBlend,
       showMirror: mirror.visible,
       time: now,

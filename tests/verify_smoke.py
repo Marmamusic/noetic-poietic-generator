@@ -29,7 +29,7 @@ def check_files_and_bindings():
 
     # 3. Verify all local ES module imports resolve to existing files and exported symbols exist
     js_files = sorted((ROOT / "src").glob("*.js"))
-    assert len(js_files) == 9, f"Expected 9 JS modules, found {len(js_files)}"
+    assert len(js_files) == 10, f"Expected 10 JS modules, found {len(js_files)}"
     for js_file in js_files:
         text = js_file.read_text(encoding="utf-8")
         for names, imp in re.findall(r'import\s+\{([^}]+)\}\s+from\s+"(\.[^"]+)"', text):

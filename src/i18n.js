@@ -1,9 +1,10 @@
-// Bilingual FR / EN UI strings, philosophical concept lexicons, and dialectical polarity pairs (v2).
+// Bilingual FR / EN UI strings, philosophical concept lexicons, and dialectical polarity pairs (v3).
 
 export const TRANSLATIONS = {
   fr: {
     title: "Générateur Poïétique Noétique",
-    subtitle: "Miroir anoptique de transindividuation collective",
+    subtitle: "Palimpseste collectif & miroir anoptique",
+    modePalimpsest: "Palimpseste",
     topoManifold: "Terrain",
     topoSpiral: "Mosaïque",
     mirrorLabel: "Miroir",
@@ -12,7 +13,10 @@ export const TRANSLATIONS = {
     engineNeural: "Neural WASM",
     swarmLabel: "Essaim",
     roomLocal: "Local",
-    llmLabel: "IA Miroir",
+    llmLabel: "LLM Miroir",
+    palKicker: "TEXTE NOÉTIQUE ÉMERGENT",
+    palGestating: "gestation…",
+    palLocalHint: "Synthèse locale active · Connecter un LLM (Gemini / OpenAI / Ollama)",
     metricPhase: "Phase",
     metricMetastability: "Métastabilité",
     metricEntropy: "Entropie",
@@ -20,7 +24,7 @@ export const TRANSLATIONS = {
     metricSimplicity: "Simplicité",
     metricCells: "Cellules",
     yourCell: "VOTRE CELLULE NOÉTIQUE",
-    inputPlaceholder: "Un mot ou concept (aperçu vivant à la frappe)...",
+    inputPlaceholder: "Un mot ou concept (1–3 termes)...",
     emitBtn: "Projeter",
     stanceAssert: "Affirmer",
     stanceQuestion: "Questionner",
@@ -45,22 +49,24 @@ export const TRANSLATIONS = {
     roomCreate: "Créer une salle",
     roomCopy: "Copier le lien",
     roomLeave: "Quitter P2P",
-    llmTitle: "Miroir Méta-Noétique (LLM optionnel)",
-    llmDesc: "Par défaut, le miroir géométrique fonctionne localement sans clé API. Activez un observateur LLM non-servile (JSON structuré uniquement, aucun dialogue individuel) pour réfracter le noème collectif et les axes dialectiques.",
-    llmEndpoint: "Endpoint (OpenAI / OpenRouter / Ollama)",
+    llmTitle: "Miroir LLM Morphogénétique",
+    llmDesc: "Le LLM n’est jamais un chatbot : il reçoit l’état topologique collectif et fait évoluer le texte émergent par touches (conserver, réarranger, métamorphoser, estomper) après un délai contemplatif.",
+    llmEndpoint: "Endpoint",
     llmModel: "Modèle",
-    llmKey: "Clé API (session navigateur uniquement)",
+    llmKey: "Clé API (stockée uniquement dans ce navigateur)",
+    llmDelay: "Délai de gestation",
+    llmRemember: "Mémoriser dans localStorage sur cet appareil",
     llmEnable: "Activer le miroir LLM",
     llmDisable: "Désactiver le miroir LLM",
-    llmPulse: "Refléter maintenant",
+    llmPulse: "Réfracter maintenant",
     helpTitle: "Générateur Poïétique Noétique — Principes",
     helpHtml: `
-      <p>Inspiré du <strong>Générateur Poïétique</strong> d’Olivier Auber (1986) et de la <strong>transindividuation</strong> de Gilbert Simondon, ce dispositif remplace les pixels par des <em>mots et concepts</em> dans un champ de potentiel vivant.</p>
+      <p>Inspiré du <strong>Générateur Poïétique</strong> d’Olivier Auber (1986) et de la <strong>transindividuation</strong> de Gilbert Simondon, ce dispositif transforme les concepts partagés en un <em>texte collectif vivant</em>.</p>
       <ul>
-        <li><strong>Terrain de potentiel & Mosaïque d’Auber :</strong> en mode <em>Terrain</em>, les concepts creusent des vallées de résonance et des crêtes d’interférence dialectique orientées selon la boussole PCA émergente. En mode <em>Mosaïque</em>, les cellules s’emboîtent bord à bord comme dans la spirale d’Auber.</li>
-        <li><strong>Aperçu fantôme à la frappe :</strong> avant même de valider, observez comment votre mot attire ou fracture le champ collectif.</li>
-        <li><strong>Le Noème au-dessus :</strong> la machine ne vous répond jamais ; elle réfracte l’état global de la pensée collective et affiche l’inflexion provoquée par votre geste.</li>
-        <li><strong>Transparence anoptique :</strong> cliquez sur n’importe quelle cellule, vallée, axe ou espace négatif (∅) pour inspecter sa provenance mathématique exacte.</li>
+        <li><strong>Palimpseste émergent (au centre) :</strong> les phrases viennent lentement au point, se réarrangent, se métamorphosent après un délai contemplatif, puis s’attardent en traces pâles avant de s’effacer au fil des glissements topologiques.</li>
+        <li><strong>Miroir LLM non-servile :</strong> connectez Gemini, OpenAI, OpenRouter, Groq ou Ollama local pour activer la réfraction générative complète (sans jamais dialoguer 1-à-1).</li>
+        <li><strong>Substrat topologique :</strong> survolez une phrase pour illuminer les concepts qui la portent sur le terrain en arrière-plan, ou basculez vers <em>Terrain</em> et <em>Mosaïque</em> pour inspecter la topologie complète.</li>
+        <li><strong>Multi-humains :</strong> ouvrez plusieurs onglets ou créez une salle P2P WebRTC sans serveur.</li>
       </ul>
     `,
     phases: {
@@ -90,18 +96,19 @@ export const TRANSLATIONS = {
     },
     toasts: {
       linkCopied: "Lien de la salle copié dans le presse-papiers.",
-      neuralReady: "Moteur neural WASM actif — champ re-projeté.",
+      neuralReady: "Moteur neural WASM actif — substrat re-projeté.",
       neuralFailed: "Chargement neural indisponible (hors-ligne ou CDN bloqué). Mode géométrique maintenu.",
       perturbed: "Vague de bifurcation injectée dans l’essaim.",
       exported: "Journal de morphogenèse exporté (JSON).",
-      llmEnabled: "Observateur méta-noétique LLM activé.",
-      llmDisabled: "Retour au miroir géométrique local.",
+      llmEnabled: "Miroir LLM morphogénétique activé.",
+      llmDisabled: "Retour à la synthèse morphogénétique locale.",
     },
   },
 
   en: {
     title: "Noetic Poietic Generator",
-    subtitle: "Anoptical mirror for collective transindividuation",
+    subtitle: "Collective palimpsest & anoptical mirror",
+    modePalimpsest: "Palimpsest",
     topoManifold: "Terrain",
     topoSpiral: "Mosaic",
     mirrorLabel: "Mirror",
@@ -110,7 +117,10 @@ export const TRANSLATIONS = {
     engineNeural: "Neural WASM",
     swarmLabel: "Swarm",
     roomLocal: "Local",
-    llmLabel: "AI Mirror",
+    llmLabel: "LLM Mirror",
+    palKicker: "EMERGENT NOETIC TEXT",
+    palGestating: "focusing…",
+    palLocalHint: "Local synthesis active · Connect an LLM (Gemini / OpenAI / Ollama)",
     metricPhase: "Phase",
     metricMetastability: "Metastability",
     metricEntropy: "Entropy",
@@ -118,7 +128,7 @@ export const TRANSLATIONS = {
     metricSimplicity: "Simplicity",
     metricCells: "Cells",
     yourCell: "YOUR NOETIC CELL",
-    inputPlaceholder: "A word or concept (live ghost preview as you type)...",
+    inputPlaceholder: "A word or concept (1–3 terms)...",
     emitBtn: "Project",
     stanceAssert: "Assert",
     stanceQuestion: "Question",
@@ -143,22 +153,24 @@ export const TRANSLATIONS = {
     roomCreate: "Create room",
     roomCopy: "Copy invite link",
     roomLeave: "Leave P2P",
-    llmTitle: "Meta-Noetic Mirror (Optional LLM)",
-    llmDesc: "By default, the local geometric mirror runs with zero API keys. Optionally connect a non-servile overhead LLM observer (strict JSON only, never 1-to-1 chat) to refract the collective noema and dialectical axes.",
-    llmEndpoint: "Endpoint (OpenAI / OpenRouter / Ollama)",
+    llmTitle: "Morphogenetic LLM Mirror",
+    llmDesc: "The LLM is never a chatbot: it observes the collective topology and gradually evolves the emerging text (keep, rearrange, morph, fade) after a contemplative delay.",
+    llmEndpoint: "Endpoint",
     llmModel: "Model",
-    llmKey: "API Key (stored in sessionStorage only)",
+    llmKey: "API Key (stored only in this browser)",
+    llmDelay: "Gestation delay",
+    llmRemember: "Remember in localStorage on this device",
     llmEnable: "Enable LLM Mirror",
     llmDisable: "Disable LLM Mirror",
-    llmPulse: "Reflect now",
+    llmPulse: "Refract now",
     helpTitle: "Noetic Poietic Generator — Principles",
     helpHtml: `
-      <p>Inspired by Olivier Auber’s <strong>Poietic Generator</strong> (1986) and Gilbert Simondon’s <strong>transindividuation</strong>, this instrument replaces pixels with <em>words and concepts</em> in a living potential field.</p>
+      <p>Inspired by Olivier Auber’s <strong>Poietic Generator</strong> (1986) and Gilbert Simondon’s <strong>transindividuation</strong>, this instrument transforms shared concepts into a <em>living collective text</em>.</p>
       <ul>
-        <li><strong>Potential Terrain & Auber Mosaic:</strong> in <em>Terrain</em> mode, concepts carve resonance valleys and dialectical interference ridges oriented along the live emergent PCA compass. In <em>Mosaic</em> mode, tiles lock edge-to-edge like Auber’s 1986 spiral.</li>
-        <li><strong>Live Ghost Preview:</strong> as you type—before committing—feel where your concept pulls the collective field and which fault lines ignite.</li>
-        <li><strong>The Overhead Noema:</strong> the machine never chats with you; it refracts the global collective horizon and displays the live inflection caused by your gesture.</li>
-        <li><strong>Anoptical Transparency:</strong> click any cell, valley, axis, or negative space (∅) to inspect its exact mathematical provenance.</li>
+        <li><strong>Emerging Palimpsest (center stage):</strong> sentences gradually come into focus, rearrange smoothly, morph after a contemplative delay, and linger as faint memory traces before dissolving as the topology shifts.</li>
+        <li><strong>Non-servile LLM Mirror:</strong> connect Gemini, OpenAI, OpenRouter, Groq, or local Ollama to awaken full generative text refraction without 1-to-1 chat.</li>
+        <li><strong>Topological Substrate:</strong> hover any sentence to illuminate its anchoring concepts on the terrain underneath, or switch to <em>Terrain</em> and <em>Mosaic</em> to inspect the full field.</li>
+        <li><strong>Multiplayer:</strong> open multiple tabs for local sync or share a serverless WebRTC P2P room link.</li>
       </ul>
     `,
     phases: {
@@ -192,8 +204,8 @@ export const TRANSLATIONS = {
       neuralFailed: "Neural model unavailable (offline or CDN blocked). Staying on fast geometric engine.",
       perturbed: "Bifurcation wave injected into the swarm.",
       exported: "Morphogenesis replay log exported (JSON).",
-      llmEnabled: "Overhead LLM meta-noetic observer enabled.",
-      llmDisabled: "Returned to local geometric mirror.",
+      llmEnabled: "Morphogenetic LLM mirror enabled.",
+      llmDisabled: "Returned to local morphogenetic synthesis.",
     },
   },
 };

@@ -4,7 +4,7 @@
 // - Mosaic Mode: true edge-to-edge Olivier Auber square spiral mosaic with chromatic resonance fields
 //   and glowing/fractured shared neighbor membranes
 
-import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=2";
+import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=3";
 
 const STANCE_META = {
   assert: { glyph: "●", color: "#7dd3fc" },
@@ -138,6 +138,7 @@ export class NoeticRenderer {
     telemetry,
     compass,
     ghostPreview,
+    highlightedTerms,
     topologyBlend,
     showMirror,
     time,
@@ -196,7 +197,7 @@ export class NoeticRenderer {
     }
 
     // 7. Noetic Cells (minimal typography beacons in Terrain ↔ edge-to-edge Auber chromatic tiles in Mosaic)
-    this.drawCells(ctx, cells, edges, cellMap, topologyBlend, time);
+    this.drawCells(ctx, cells, edges, cellMap, topologyBlend, time, highlightedTerms);
 
     ctx.restore();
 
@@ -659,7 +660,7 @@ export class NoeticRenderer {
    * Renders cells as crisp minimal typographic nodes on the Terrain,
    * morphing seamlessly into an edge-to-edge chromatic Auberian Mosaic in Spiral mode.
    */
-  drawCells(ctx, cells, edges, cellMap, topologyBlend, time) {
+  drawCells(ctx, cells, edges, cellMap, topologyBlend, time, highlightedTerms = null) {
     const ordered = [...cells].sort((a, b) => {
       if (a.isLocal !== b.isLocal) return a.isLocal ? 1 : -1;
       if (a.isHuman !== b.isHuman) return a.isHuman ? 1 : -1;
@@ -669,6 +670,8 @@ export class NoeticRenderer {
     for (const c of ordered) {
       const stanceInfo = STANCE_META[c.stance] || STANCE_META.assert;
       const isSelected = this.selectedId === c.id;
+      const isAnchorHighlighted =
+        highlightedTerms && highlightedTerms.size > 0 && highlightedTerms.has(c.term.toLowerCase());
       const hue = c.hue != null ? c.hue : 200;
       const age = time - (c.updatedAt || 0);
       const recentGlow = age < 1400 ? 1 - age / 1400 : 0;
@@ -714,11 +717,15 @@ export class NoeticRenderer {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        if (c.isLocal || isSelected) {
+        if (c.isLocal || isSelected || isAnchorHighlighted) {
           ctx.beginPath();
-          ctx.arc(c.x, c.y - 11, dotR + 5, 0, Math.PI * 2);
-          ctx.strokeStyle = isSelected ? "#ffffff" : `hsla(${hue}, 90%, 78%, 0.75)`;
-          ctx.lineWidth = 1.25;
+          ctx.arc(c.x, c.y - 11, dotR + (isAnchorHighlighted ? 11 : 5), 0, Math.PI * 2);
+          ctx.strokeStyle = isAnchorHighlighted
+            ? "#fde68a"
+            : isSelected
+            ? "#ffffff"
+            : `hsla(${hue}, 90%, 78%, 0.75)`;
+          ctx.lineWidth = isAnchorHighlighted ? 2.0 : 1.25;
           ctx.stroke();
         }
       }

@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Générateur Poïétique Noétique — Noetic Poietic Generator</title>
-  <meta name="description" content="Real-time collective noetic field inspired by Olivier Auber's Poietic Generator and Gilbert Simondon's transindividuation." />
+  <meta name="description" content="Living morphogenetic collective text and anoptical noetic mirror inspired by Olivier Auber's Poietic Generator and Gilbert Simondon's transindividuation." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=2" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css?v=3" />
 </head>
 <body>
-  <!-- Full-bleed Noetic Field Canvas -->
-  <canvas id="noetic-canvas" aria-label="Noetic Poietic Field"></canvas>
+  <!-- Full-bleed Underlying Noetic Substrate Canvas -->
+  <canvas id="noetic-canvas" aria-label="Noetic Poietic Substrate"></canvas>
 
   <!-- Top Minimalist Anoptical Bar -->
   <header class="top-bar">
@@ -20,19 +20,20 @@
       <span class="brand-dot" id="phase-dot" title="Phase"></span>
       <div>
         <h1 class="brand-title" data-i18n="title">Générateur Poïétique Noétique</h1>
-        <p class="brand-sub" data-i18n="subtitle">Miroir anoptique de transindividuation collective</p>
+        <p class="brand-sub" data-i18n="subtitle">Palimpseste collectif &amp; miroir anoptique</p>
       </div>
     </div>
 
     <div class="controls-cluster">
-      <!-- Topology Toggle: Semantic Manifold vs Auberian Spiral -->
-      <div class="segmented" role="group" aria-label="Topology">
-        <button id="btn-topo-manifold" class="seg-btn active" data-i18n="topoManifold">Champ</button>
-        <button id="btn-topo-spiral" class="seg-btn" data-i18n="topoSpiral">Spirale</button>
+      <!-- 3-Mode View Switch: Palimpsest (Text-First) | Terrain | Auber Mosaic -->
+      <div class="segmented" role="group" aria-label="View Mode">
+        <button id="btn-mode-palimpsest" class="seg-btn active" data-i18n="modePalimpsest">Palimpseste</button>
+        <button id="btn-topo-manifold" class="seg-btn" data-i18n="topoManifold">Terrain</button>
+        <button id="btn-topo-spiral" class="seg-btn" data-i18n="topoSpiral">Mosaïque</button>
       </div>
 
-      <!-- Mirror Layer Toggle -->
-      <button id="btn-toggle-mirror" class="pill-btn active" title="Toggle Overhead Mirror">
+      <!-- Mirror Overlay Toggle (for Terrain/Mosaic modes) -->
+      <button id="btn-toggle-mirror" class="pill-btn active" title="Toggle Mirror Annotations">
         <span class="icon-glyph">◎</span>
         <span data-i18n="mirrorLabel">Miroir</span>
       </button>
@@ -56,10 +57,10 @@
         <span id="room-badge" data-i18n="roomLocal">Local</span>
       </button>
 
-      <!-- Optional BYOK Overhead LLM Mirror -->
-      <button id="btn-llm-panel" class="pill-btn" title="Optional Overhead LLM Mirror">
-        <span class="icon-glyph">◈</span>
-        <span data-i18n="llmLabel">IA Miroir</span>
+      <!-- Primary LLM Palimpsest Engine -->
+      <button id="btn-llm-panel" class="pill-btn" title="Connect LLM Mirror (Gemini, OpenAI, OpenRouter, Groq, Ollama)">
+        <span class="status-led" id="llm-led"></span>
+        <span data-i18n="llmLabel">LLM Miroir</span>
       </button>
 
       <!-- Language Switch -->
@@ -70,8 +71,27 @@
     </div>
   </header>
 
-  <!-- Overhead Meta-Noetic Mirror Refraction ("le miroir placé au-dessus") -->
-  <section class="noeme-mirror" id="noeme-mirror" aria-live="polite">
+  <!-- Center Stage: Living Morphogenetic Emerging Text Palimpsest (Default View) -->
+  <main class="palimpsest-stage" id="palimpsest-stage" aria-live="polite">
+    <div class="pal-header">
+      <span class="pal-kicker" data-i18n="palKicker">TEXTE NOÉTIQUE ÉMERGENT</span>
+      <span class="pal-gestation hidden" id="pal-gestation" data-i18n="palGestating">gestation…</span>
+    </div>
+
+    <!-- Living Sentences Container (FLIP animated rearrangement, focus-in, morph, linger, fade) -->
+    <div class="pal-stream" id="pal-stream"></div>
+
+    <!-- Subtle Status & Quick LLM Awakening Pill -->
+    <div class="pal-footer">
+      <button type="button" class="pal-llm-chip" id="btn-pal-connect">
+        <span class="status-led" id="pal-llm-led"></span>
+        <span id="pal-engine-status" data-i18n="palLocalHint">Synthèse locale active · Connecter un LLM (Gemini / OpenAI / Ollama)</span>
+      </button>
+    </div>
+  </main>
+
+  <!-- Compact Overhead Noème Banner (visible in Terrain / Mosaic modes) -->
+  <section class="noeme-mirror hidden" id="noeme-mirror" aria-live="polite">
     <span class="noeme-kicker" data-i18n="mirrorKicker">NOÈME COLLECTIF ÉMERGENT</span>
     <p class="noeme-text" id="noeme-text">—</p>
     <p class="noeme-diff hidden" id="noeme-diff"></p>
@@ -122,7 +142,7 @@
       <button class="close-btn" data-close="popover-swarm">×</button>
     </div>
     <p class="popover-desc" data-i18n="swarmDesc">
-      Agents autonomes hétérogènes (résonateurs, dialecticiens, passeurs, simplificateurs, bifurcateurs) pour éprouver la boucle autopoïétique en solo.
+      Agents autonomes hétérogènes animés par des vagues de convergence, cristallisation et bifurcation pour éprouver la boucle autopoïétique en solo.
     </p>
     <div class="field-row">
       <label for="slider-swarm" data-i18n="swarmAgents">Agents</label>
@@ -136,7 +156,7 @@
     </div>
     <div class="popover-actions">
       <button id="btn-swarm-pause" class="action-btn" data-i18n="pause">Pause</button>
-      <button id="btn-swarm-pulse" class="action-btn" data-i18n="swarmPerturb">Perturber</button>
+      <button id="btn-swarm-pulse" class="action-btn" data-i18n="swarmPerturb">Bifurquer</button>
     </div>
   </section>
 
@@ -164,32 +184,54 @@
     <p class="status-line mono" id="room-status">BroadcastChannel actif (multi-onglets)</p>
   </section>
 
-  <!-- Popover: Optional BYOK Overhead LLM Mirror -->
+  <!-- Popover: Multi-Provider LLM Palimpsest Engine -->
   <section class="popover hidden" id="popover-llm">
     <div class="popover-head">
-      <h3 data-i18n="llmTitle">Miroir Méta-Noétique (LLM optionnel)</h3>
+      <h3 data-i18n="llmTitle">Miroir LLM Morphogénétique</h3>
       <button class="close-btn" data-close="popover-llm">×</button>
     </div>
     <p class="popover-desc" data-i18n="llmDesc">
-      Par défaut, le miroir géométrique fonctionne localement sans clé API. Vous pouvez activer un observateur LLM non-servile (JSON structuré uniquement, aucun dialogue individuel) pour nommer les bassins et axes dialectiques émergents.
+      Le LLM n’est jamais un chatbot : il reçoit l’état topologique collectif et fait évoluer le texte émergent par touches (conserver, réarranger, métamorphoser, estomper) après un délai contemplatif.
     </p>
+
+    <!-- 1-Click Provider Presets -->
+    <div class="preset-grid" role="group" aria-label="LLM Provider Presets">
+      <button type="button" class="preset-btn active" data-preset="gemini">Gemini</button>
+      <button type="button" class="preset-btn" data-preset="openai">OpenAI</button>
+      <button type="button" class="preset-btn" data-preset="openrouter">OpenRouter</button>
+      <button type="button" class="preset-btn" data-preset="groq">Groq</button>
+      <button type="button" class="preset-btn" data-preset="ollama">Ollama</button>
+    </div>
+
     <div class="field-stack">
-      <label for="input-llm-endpoint" data-i18n="llmEndpoint">Endpoint (OpenAI / OpenRouter / Ollama)</label>
-      <input type="url" id="input-llm-endpoint" value="https://api.openai.com/v1/chat/completions" />
+      <label for="input-llm-endpoint" data-i18n="llmEndpoint">Endpoint</label>
+      <input type="url" id="input-llm-endpoint" value="https://generativelanguage.googleapis.com/v1beta/models" />
     </div>
     <div class="field-stack">
       <label for="input-llm-model" data-i18n="llmModel">Modèle</label>
-      <input type="text" id="input-llm-model" value="gpt-4o-mini" />
+      <input type="text" id="input-llm-model" value="gemini-2.5-flash" />
     </div>
     <div class="field-stack">
-      <label for="input-llm-key" data-i18n="llmKey">Clé API (stockée uniquement en session navigateur)</label>
-      <input type="password" id="input-llm-key" placeholder="sk-..." autocomplete="off" />
+      <label for="input-llm-key" data-i18n="llmKey">Clé API (stockée uniquement dans ce navigateur)</label>
+      <input type="password" id="input-llm-key" placeholder="AIza..." autocomplete="off" />
     </div>
+
+    <div class="field-row">
+      <label for="slider-delay" data-i18n="llmDelay">Délai de gestation</label>
+      <input type="range" id="slider-delay" min="1.0" max="6.0" step="0.5" value="2.5" />
+      <span class="mono" id="label-delay-val">2.5s</span>
+    </div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="check-remember-key" />
+      <span data-i18n="llmRemember">Mémoriser dans localStorage sur cet appareil</span>
+    </label>
+
     <div class="popover-actions">
       <button id="btn-llm-toggle" class="action-btn primary" data-i18n="llmEnable">Activer le miroir LLM</button>
-      <button id="btn-llm-trigger" class="action-btn" data-i18n="llmPulse">Refléter maintenant</button>
+      <button id="btn-llm-trigger" class="action-btn" data-i18n="llmPulse">Réfracter maintenant</button>
     </div>
-    <p class="status-line mono" id="llm-status">Mode géométrique local actif</p>
+    <p class="status-line mono" id="llm-status">Synthèse morphogénétique locale active</p>
   </section>
 
   <!-- Bottom Floating HUD: Your Local Noetic Cell (Psychic Ergonomics) -->
@@ -262,6 +304,6 @@
   <!-- Subtle Toast Notification -->
   <div class="toast hidden" id="toast"></div>
 
-  <script type="module" src="./src/main.js?v=2"></script>
+  <script type="module" src="./src/main.js?v=3"></script>
 </body>
 </html>

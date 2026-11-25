@@ -1,7 +1,7 @@
 // Layer 2 (v2): Live 2D PCA Semantic Compass, Continuous Potential-Guided Physics,
 // Edge-to-Edge Auber Spiral Mosaic, Conviction Weighting, Ghost Preview & Telemetry
 
-import { AXIS_COUNT } from "./semanticEngine.js?v=2";
+import { AXIS_COUNT } from "./semanticEngine.js?v=3";
 
 /**
  * Exact Ulam / Olivier Auber square spiral coordinates (index 0 at center).

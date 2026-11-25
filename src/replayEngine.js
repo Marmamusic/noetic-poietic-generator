@@ -1,5 +1,5 @@
-// Append-only Morphogenesis Recorder & Temporal Scrubber (v2)
-// Captures cells (with chromatic hues & conviction), edges, basins, axes, voids, PCA compass, and emergent Noème.
+// Append-only Morphogenesis Recorder & Temporal Scrubber (v3)
+// Captures underlying topology + living emerging Palimpsest sentences for playback & research export.
 
 export class ReplayEngine {
   constructor(maxFrames = 400) {
@@ -10,7 +10,7 @@ export class ReplayEngine {
     this.startedAt = Date.now();
   }
 
-  capture(topology, mirror, eventNote = null) {
+  capture(topology, mirror, palimpsest = null, eventNote = null) {
     if (this.isScrubbing) return;
 
     const cells = Array.from(topology.cells.values()).map((c) => ({
@@ -30,10 +30,22 @@ export class ReplayEngine {
       lastLeverage: c.lastLeverage || 0,
     }));
 
+    const palSnap = palimpsest
+      ? palimpsest.sentences.map((s) => ({
+          id: s.id,
+          text: s.text,
+          prevText: null,
+          anchors: [...(s.anchors || [])],
+          role: s.role,
+          status: s.status === "lingering" ? "lingering" : "alive",
+        }))
+      : [];
+
     const frame = {
       t: Date.now() - this.startedAt,
       event: eventNote,
       noeme: mirror.noeme,
+      palimpsest: palSnap,
       compass: { ...topology.compass },
       telemetry: { ...topology.telemetry },
       cells,
@@ -75,7 +87,7 @@ export class ReplayEngine {
 
   exportJSON() {
     const payload = {
-      instrument: "Noetic Poietic Generator v2",
+      instrument: "Noetic Poietic Generator v3 (Living Palimpsest)",
       exportedAt: new Date().toISOString(),
       frameCount: this.frames.length,
       frames: this.frames,
@@ -84,7 +96,7 @@ export class ReplayEngine {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `noetic-morphogenesis-${Date.now()}.json`;
+    a.download = `noetic-palimpsest-${Date.now()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
