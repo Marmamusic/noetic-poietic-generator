@@ -1,14 +1,14 @@
-// Main Orchestrator for the Noetic Poietic Generator (v3 — Text-First Palimpsest + Multi-Provider LLM)
+// Main Orchestrator for the Noetic Poietic Generator (v4 — Free-Associative Zero-Key Browser LLM + Cloud Presets)
 
-import { TRANSLATIONS } from "./i18n.js?v=3";
-import { SemanticEngine } from "./semanticEngine.js?v=3";
-import { TopologyEngine } from "./topologyEngine.js?v=3";
-import { MirrorEngine } from "./mirrorEngine.js?v=3";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=3";
-import { SwarmEngine } from "./swarmEngine.js?v=3";
-import { SyncEngine } from "./syncEngine.js?v=3";
-import { ReplayEngine } from "./replayEngine.js?v=3";
-import { NoeticRenderer } from "./renderer.js?v=3";
+import { TRANSLATIONS } from "./i18n.js?v=4";
+import { SemanticEngine } from "./semanticEngine.js?v=4";
+import { TopologyEngine } from "./topologyEngine.js?v=4";
+import { MirrorEngine } from "./mirrorEngine.js?v=4";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=4";
+import { SwarmEngine } from "./swarmEngine.js?v=4";
+import { SyncEngine } from "./syncEngine.js?v=4";
+import { ReplayEngine } from "./replayEngine.js?v=4";
+import { NoeticRenderer } from "./renderer.js?v=4";
 
 const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -16,7 +16,7 @@ const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 const semantic = new SemanticEngine();
 const topology = new TopologyEngine(semantic);
 const mirror = new MirrorEngine(topology);
-const palimpsest = new PalimpsestEngine(topology, mirror);
+const palimpsest = new PalimpsestEngine(topology, mirror, semantic);
 const swarm = new SwarmEngine(topology, semantic);
 const replay = new ReplayEngine(450);
 
@@ -45,6 +45,13 @@ const el = {
   valSimplicity: document.getElementById("val-simplicity"),
   valCells: document.getElementById("val-cells"),
   palStage: document.getElementById("palimpsest-stage"),
+  palOnboarding: document.getElementById("pal-onboarding"),
+  palCloudPreview: document.getElementById("pal-cloud-preview"),
+  btnAwakenBrowserLlm: document.getElementById("btn-awaken-browser-llm"),
+  btnOpenExternalLlm: document.getElementById("btn-open-external-llm"),
+  palProgressWrap: document.getElementById("pal-progress-wrap"),
+  palProgressFill: document.getElementById("pal-progress-fill"),
+  palProgressText: document.getElementById("pal-progress-text"),
   palStream: document.getElementById("pal-stream"),
   palGestation: document.getElementById("pal-gestation"),
   palLlmLed: document.getElementById("pal-llm-led"),
@@ -85,6 +92,8 @@ const el = {
   btnLlmPanel: document.getElementById("btn-llm-panel"),
   llmLed: document.getElementById("llm-led"),
   presetBtns: Array.from(document.querySelectorAll(".preset-btn")),
+  fieldLlmEndpoint: document.getElementById("field-llm-endpoint"),
+  fieldLlmKey: document.getElementById("field-llm-key"),
   inputLlmEndpoint: document.getElementById("input-llm-endpoint"),
   inputLlmModel: document.getElementById("input-llm-model"),
   inputLlmKey: document.getElementById("input-llm-key"),
@@ -139,8 +148,50 @@ function escapeHtml(s) {
 // =========================================================================
 const sentenceDomMap = new Map();
 
-function renderPalimpsestDOM(sentences, { isGestating = false } = {}) {
+function renderCloudPreview() {
+  if (!el.palCloudPreview) return;
+  const cells = Array.from(topology.cells.values());
+  const seen = new Set();
+  const chips = [];
+  // Show human words first, then unique surrounding swarm concepts
+  const ordered = [...cells].sort((a, b) => (a.isHuman === b.isHuman ? 0 : a.isHuman ? -1 : 1));
+  for (const c of ordered) {
+    const low = c.term.toLowerCase();
+    if (seen.has(low)) continue;
+    seen.add(low);
+    const cls = [
+      "cloud-word",
+      c.isHuman ? "human" : "",
+      c.stance === "negate" ? "negate" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const sym = c.stance === "negate" ? "⊘ " : c.stance === "question" ? "? " : c.stance === "bridge" ? "⇄ " : "";
+    chips.push(`<span class="${cls}">${sym}${escapeHtml(c.term)}</span>`);
+    if (chips.length >= 15) break;
+  }
+  el.palCloudPreview.innerHTML = chips.join("");
+}
+
+function renderPalimpsestDOM(sentences, meta = {}) {
+  const { isGestating = false, browserLlmState = palimpsest.browserLlmState, browserLlmProgress = palimpsest.browserLlmProgress } = meta;
   el.palGestation.classList.toggle("hidden", !isGestating);
+
+  const hasSentences = sentences && sentences.length > 0;
+  el.palOnboarding.classList.toggle("hidden", hasSentences);
+  el.palStream.classList.toggle("hidden", !hasSentences);
+
+  if (!hasSentences) {
+    renderCloudPreview();
+    const isLoading = browserLlmState === "loading";
+    el.palProgressWrap.classList.toggle("hidden", !isLoading);
+    el.btnAwakenBrowserLlm.disabled = isLoading;
+    if (isLoading) {
+      el.palProgressFill.style.width = `${browserLlmProgress}%`;
+      el.palProgressText.textContent = `${browserLlmProgress}%`;
+    }
+    return;
+  }
 
   // 1. FIRST: measure current bounding rects of existing sentence nodes
   const firstRects = new Map();
@@ -227,11 +278,15 @@ palimpsest.onChange = (sentences, meta) => {
   }
 };
 
-palimpsest.onStatus = (msg, isLlmActive) => {
+palimpsest.onStatus = (msg, state = "idle") => {
   el.llmStatus.textContent = msg;
-  el.llmLed.classList.toggle("ready", Boolean(isLlmActive));
-  el.palLlmLed.classList.toggle("ready", Boolean(isLlmActive));
-  el.palEngineStatus.textContent = isLlmActive ? msg : t().palLocalHint;
+  el.palEngineStatus.textContent = msg;
+  const isReady = state === "ready";
+  const isLoading = state === "loading";
+  el.llmLed.classList.toggle("ready", isReady);
+  el.llmLed.classList.toggle("loading", isLoading);
+  el.palLlmLed.classList.toggle("ready", isReady);
+  el.palLlmLed.classList.toggle("loading", isLoading);
 };
 
 // =========================================================================
@@ -263,8 +318,8 @@ function applyTranslations() {
   el.btnLang.textContent = currentLang.toUpperCase();
   el.btnSwarmPause.textContent = swarm.paused ? dict.resume : dict.pause;
   el.btnLlmToggle.textContent = palimpsest.llmEnabled ? dict.llmDisable : dict.llmEnable;
-  if (!palimpsest.llmEnabled) {
-    el.palEngineStatus.textContent = dict.palLocalHint;
+  if (!palimpsest.llmEnabled && palimpsest.browserLlmState !== "loading") {
+    el.palEngineStatus.textContent = dict.palIdleHint;
   }
   topology.refreshCompassLabels(currentLang);
   mirror.update(currentLang);
@@ -564,10 +619,27 @@ el.btnRoomLeave.addEventListener("click", () => {
 });
 
 // =========================================================================
-// MULTI-PROVIDER LLM PALIMPSEST CONTROLS (Gemini, OpenAI, OpenRouter, Groq, Ollama)
+// MULTI-PROVIDER + ZERO-KEY BROWSER LLM PALIMPSEST CONTROLS
 // =========================================================================
 el.btnLlmPanel.addEventListener("click", () => togglePopover("popover-llm"));
 el.btnPalConnect.addEventListener("click", () => togglePopover("popover-llm"));
+el.btnOpenExternalLlm.addEventListener("click", () => {
+  selectPresetUI("gemini");
+  togglePopover("popover-llm");
+});
+
+async function awakenBrowserLLM() {
+  selectPresetUI("browser");
+  const ok = await palimpsest.initBrowserLLM(currentLang);
+  if (ok) {
+    el.btnLlmPanel.classList.add("active");
+    el.btnLlmToggle.textContent = t().llmDisable;
+    showToast(t().toasts.llmEnabled);
+    palimpsest.scheduleGestation(currentLang, { source: "awaken" }, true);
+  }
+}
+
+el.btnAwakenBrowserLlm.addEventListener("click", awakenBrowserLLM);
 
 function selectPresetUI(presetId) {
   const p = palimpsest.applyPreset(presetId);
@@ -575,6 +647,10 @@ function selectPresetUI(presetId) {
   el.inputLlmEndpoint.value = p.endpoint;
   el.inputLlmModel.value = p.model;
   el.inputLlmKey.placeholder = p.keyPlaceholder;
+
+  const isBrowser = p.id === "browser";
+  el.fieldLlmEndpoint.classList.toggle("hidden", isBrowser);
+  el.fieldLlmKey.classList.toggle("hidden", isBrowser);
 }
 
 el.presetBtns.forEach((btn) => {
@@ -588,13 +664,12 @@ el.sliderDelay.addEventListener("input", () => {
 });
 
 function syncLlmFormToEngine() {
-  const preset = LLM_PRESETS[palimpsest.providerId] || LLM_PRESETS.gemini;
+  const preset = LLM_PRESETS[palimpsest.providerId] || LLM_PRESETS.browser;
   palimpsest.config.protocol = preset.protocol;
   palimpsest.config.endpoint = el.inputLlmEndpoint.value.trim();
   palimpsest.config.model = el.inputLlmModel.value.trim();
   palimpsest.config.apiKey = el.inputLlmKey.value.trim();
 
-  // Persist in sessionStorage, and optionally localStorage if opted in
   const payload = JSON.stringify({
     providerId: palimpsest.providerId,
     endpoint: palimpsest.config.endpoint,
@@ -611,6 +686,7 @@ function syncLlmFormToEngine() {
 }
 
 function restoreSavedLlmConfig() {
+  selectPresetUI("browser");
   const raw = localStorage.getItem("npg_llm_cfg") || sessionStorage.getItem("npg_llm_cfg");
   if (!raw) return;
   try {
@@ -632,8 +708,13 @@ function restoreSavedLlmConfig() {
   }
 }
 
-el.btnLlmToggle.addEventListener("click", () => {
+el.btnLlmToggle.addEventListener("click", async () => {
   syncLlmFormToEngine();
+  if (!palimpsest.llmEnabled && palimpsest.config.protocol === "browser") {
+    await awakenBrowserLLM();
+    return;
+  }
+
   palimpsest.llmEnabled = !palimpsest.llmEnabled;
   el.btnLlmPanel.classList.toggle("active", palimpsest.llmEnabled);
   el.btnLlmToggle.textContent = palimpsest.llmEnabled ? t().llmDisable : t().llmEnable;
@@ -644,13 +725,17 @@ el.btnLlmToggle.addEventListener("click", () => {
   if (palimpsest.llmEnabled) {
     palimpsest.scheduleGestation(currentLang, { source: "llm-connect" }, true);
   } else {
-    el.palEngineStatus.textContent = t().palLocalHint;
-    el.llmStatus.textContent = t().palLocalHint;
+    el.palEngineStatus.textContent = t().palIdleHint;
+    el.llmStatus.textContent = t().palIdleHint;
   }
 });
 
-el.btnLlmTrigger.addEventListener("click", () => {
+el.btnLlmTrigger.addEventListener("click", async () => {
   syncLlmFormToEngine();
+  if (palimpsest.config.protocol === "browser" && palimpsest.browserLlmState !== "ready") {
+    await awakenBrowserLLM();
+    return;
+  }
   palimpsest.llmEnabled = true;
   el.btnLlmPanel.classList.add("active");
   el.btnLlmToggle.textContent = t().llmDisable;
@@ -662,7 +747,10 @@ el.btnLang.addEventListener("click", () => {
   currentLang = currentLang === "fr" ? "en" : "fr";
   swarm.setLanguage(currentLang, true);
   applyTranslations();
-  palimpsest.seedInitial(currentLang);
+  renderCloudPreview();
+  if (palimpsest.llmEnabled) {
+    palimpsest.scheduleGestation(currentLang, { source: "language-switch" }, true);
+  }
 });
 
 // Help modal
@@ -964,7 +1052,7 @@ function init() {
   for (let i = 0; i < 45; i++) topology.stepPhysics(0.025);
   applyTranslations();
   setViewMode("palimpsest");
-  palimpsest.seedInitial(currentLang);
+  renderPalimpsestDOM(palimpsest.sentences, { isGestating: false });
   el.tokenCounter.textContent = "1/3";
   replay.capture(topology, mirror, palimpsest, "init");
   syncReplaySlider();
@@ -1026,6 +1114,7 @@ function loop(now) {
       mirror.update(currentLang);
       updateNoemeUI();
       updateTelemetryUI(topology.telemetry);
+      if (palimpsest.sentences.length === 0) renderCloudPreview();
       lastMirrorUpdate = now;
     }
 

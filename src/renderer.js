@@ -4,7 +4,7 @@
 // - Mosaic Mode: true edge-to-edge Olivier Auber square spiral mosaic with chromatic resonance fields
 //   and glowing/fractured shared neighbor membranes
 
-import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=3";
+import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=4";
 
 const STANCE_META = {
   assert: { glyph: "●", color: "#7dd3fc" },

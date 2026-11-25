@@ -3,7 +3,7 @@
 // - Deterministic perceptual chromatic signature (hue) per conceptual orientation
 // - Instant mode (<2ms) + optional browser-native neural embeddings via @xenova/transformers
 
-import { POLARITY_PAIRS, normalizeText } from "./i18n.js?v=3";
+import { POLARITY_PAIRS, normalizeText } from "./i18n.js?v=4";
 
 // 24 conceptual semantic dimensions (each maps stems/roots -> signed weights)
 export const SEMANTIC_AXES = [

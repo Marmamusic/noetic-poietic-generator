@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=3" />
+  <link rel="stylesheet" href="./styles.css?v=4" />
 </head>
 <body>
   <!-- Full-bleed Underlying Noetic Substrate Canvas -->
@@ -78,14 +78,35 @@
       <span class="pal-gestation hidden" id="pal-gestation" data-i18n="palGestating">gestation…</span>
     </div>
 
-    <!-- Living Sentences Container (FLIP animated rearrangement, focus-in, morph, linger, fade) -->
-    <div class="pal-stream" id="pal-stream"></div>
+    <!-- Honest Pre-LLM Awakening State: live word cloud + 1-click zero-key Browser LLM -->
+    <div class="pal-onboarding" id="pal-onboarding">
+      <div class="pal-cloud-preview" id="pal-cloud-preview"></div>
+      <p class="pal-onboard-copy" data-i18n="palOnboardCopy">
+        Aucun LLM n’est encore éveillé. Éveillez un véritable modèle directement dans votre navigateur (gratuit, sans clé API, mis en cache après le premier chargement) pour laisser émerger un texte libre face à ce nuage de mots.
+      </p>
+      <div class="pal-onboard-actions">
+        <button type="button" class="awaken-btn" id="btn-awaken-browser-llm">
+          <span>✦</span>
+          <span data-i18n="palAwakenBtn">Éveiller le LLM navigateur (Qwen2.5 · gratuit, sans clé)</span>
+        </button>
+        <button type="button" class="link-btn" id="btn-open-external-llm" data-i18n="palExternalLink">
+          ou connecter Gemini / OpenAI / Ollama →
+        </button>
+      </div>
+      <div class="pal-progress-wrap hidden" id="pal-progress-wrap">
+        <div class="pal-progress-bar"><div class="pal-progress-fill" id="pal-progress-fill"></div></div>
+        <span class="mono pal-progress-text" id="pal-progress-text">0%</span>
+      </div>
+    </div>
 
-    <!-- Subtle Status & Quick LLM Awakening Pill -->
+    <!-- Living Sentences Container (FLIP animated rearrangement, focus-in, morph, linger, fade) -->
+    <div class="pal-stream hidden" id="pal-stream"></div>
+
+    <!-- Subtle Status & Quick LLM Switcher Pill -->
     <div class="pal-footer">
       <button type="button" class="pal-llm-chip" id="btn-pal-connect">
         <span class="status-led" id="pal-llm-led"></span>
-        <span id="pal-engine-status" data-i18n="palLocalHint">Synthèse locale active · Connecter un LLM (Gemini / OpenAI / Ollama)</span>
+        <span id="pal-engine-status" data-i18n="palIdleHint">En attente d’un LLM · Cliquer pour configurer</span>
       </button>
     </div>
   </main>
@@ -196,24 +217,25 @@
 
     <!-- 1-Click Provider Presets -->
     <div class="preset-grid" role="group" aria-label="LLM Provider Presets">
-      <button type="button" class="preset-btn active" data-preset="gemini">Gemini</button>
+      <button type="button" class="preset-btn active" data-preset="browser">Browser (Sans clé)</button>
+      <button type="button" class="preset-btn" data-preset="gemini">Gemini</button>
       <button type="button" class="preset-btn" data-preset="openai">OpenAI</button>
       <button type="button" class="preset-btn" data-preset="openrouter">OpenRouter</button>
       <button type="button" class="preset-btn" data-preset="groq">Groq</button>
       <button type="button" class="preset-btn" data-preset="ollama">Ollama</button>
     </div>
 
-    <div class="field-stack">
+    <div class="field-stack" id="field-llm-endpoint">
       <label for="input-llm-endpoint" data-i18n="llmEndpoint">Endpoint</label>
-      <input type="url" id="input-llm-endpoint" value="https://generativelanguage.googleapis.com/v1beta/models" />
+      <input type="url" id="input-llm-endpoint" value="local://webgpu-wasm" />
     </div>
     <div class="field-stack">
       <label for="input-llm-model" data-i18n="llmModel">Modèle</label>
-      <input type="text" id="input-llm-model" value="gemini-2.5-flash" />
+      <input type="text" id="input-llm-model" value="onnx-community/Qwen2.5-0.5B-Instruct" />
     </div>
-    <div class="field-stack">
+    <div class="field-stack" id="field-llm-key">
       <label for="input-llm-key" data-i18n="llmKey">Clé API (stockée uniquement dans ce navigateur)</label>
-      <input type="password" id="input-llm-key" placeholder="AIza..." autocomplete="off" />
+      <input type="password" id="input-llm-key" placeholder="(aucune clé — exécuté dans votre navigateur)" autocomplete="off" />
     </div>
 
     <div class="field-row">
@@ -304,6 +326,6 @@
   <!-- Subtle Toast Notification -->
   <div class="toast hidden" id="toast"></div>
 
-  <script type="module" src="./src/main.js?v=3"></script>
+  <script type="module" src="./src/main.js?v=4"></script>
 </body>
 </html>

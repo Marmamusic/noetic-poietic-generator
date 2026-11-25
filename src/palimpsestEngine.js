@@ -1,10 +1,22 @@
-// Layer 3 (v3): Morphogenetic Living Text Palimpsest Engine
-// - Maintains an organic set of living sentences (emerging -> alive -> morphing -> lingering -> dissolved)
-// - Native multi-provider LLM mirror: Google Gemini, OpenAI, OpenRouter, Groq, Local Ollama
-// - Instant poetic-philosophical local fallback emitting identical incremental morphogenetic ops
-//   so the text comes into focus, rearranges, morphs, lingers, and fades even before a key is entered
+// Layer 3 (v4): Free-Associative LLM Palimpsest Engine
+// - Zero-key In-Browser LLM (Qwen2.5-0.5B-Instruct via Web Worker, WebGPU/WASM)
+// - Plus multi-provider cloud/local presets (Gemini, OpenAI, OpenRouter, Groq, Ollama)
+// - Free-associative prompting: confronts the LLM with the live word cloud / dynamic map
+//   and lets it write whatever genuinely comes to mind (no rigid JSON / no canned template nonsense)
+// - Client-side semantic diff choreography handles focus-in, in-place morphing, FLIP rearrangement, and lingering fade
+
+import { cosineSimilarity } from "./semanticEngine.js?v=4";
 
 export const LLM_PRESETS = {
+  browser: {
+    id: "browser",
+    label: "Browser LLM (Sans clé)",
+    protocol: "browser",
+    endpoint: "local://webgpu-wasm",
+    model: "onnx-community/Qwen2.5-0.5B-Instruct",
+    requiresKey: false,
+    keyPlaceholder: "(aucune clé — modèle exécuté dans votre navigateur)",
+  },
   gemini: {
     id: "gemini",
     label: "Google Gemini",
@@ -53,18 +65,18 @@ export const LLM_PRESETS = {
 };
 
 export class PalimpsestEngine {
-  constructor(topologyEngine, mirrorEngine) {
+  constructor(topologyEngine, mirrorEngine, semanticEngine) {
     this.topology = topologyEngine;
     this.mirror = mirrorEngine;
+    this.semantic = semanticEngine;
 
     this.sentences = []; // Array<SentenceNode>
     this._nextId = 1;
-    this._localTemplateCursor = 0;
 
-    // Contemplative timing & gestation parameters
-    this.gestationDelayMs = 2600; // Deliberate delay before text begins morphing after a change
-    this.lingerDurationMs = 12500; // How long fading sentences linger as pale palimpsest memory
-    this.ambientIntervalMs = 9500; // Organic drift rhythm when swarm shifts topology
+    // Contemplative delay & memory timing
+    this.gestationDelayMs = 2600;
+    this.lingerDurationMs = 14000;
+    this.ambientIntervalMs = 12000;
 
     this.isGestating = false;
     this._gestationTimer = null;
@@ -72,22 +84,30 @@ export class PalimpsestEngine {
     this._pendingTrigger = null;
     this._inFlight = false;
 
-    // LLM provider configuration (stored safely in browser storage only when user opts in)
+    // Active LLM state
     this.llmEnabled = false;
-    this.providerId = "gemini";
+    this.providerId = "browser";
     this.config = {
-      protocol: LLM_PRESETS.gemini.protocol,
-      endpoint: LLM_PRESETS.gemini.endpoint,
-      model: LLM_PRESETS.gemini.model,
+      protocol: LLM_PRESETS.browser.protocol,
+      endpoint: LLM_PRESETS.browser.endpoint,
+      model: LLM_PRESETS.browser.model,
       apiKey: "",
     };
 
-    this.onChange = null; // callback(sentences, meta)
-    this.onStatus = null; // callback(statusText, isLlmActive)
+    // Dedicated Web Worker for zero-key in-browser Qwen2.5 LLM
+    this._worker = null;
+    this.browserLlmState = "idle"; // "idle" | "loading" | "ready" | "error"
+    this.browserLlmProgress = 0;
+    this.browserLlmDevice = null;
+    this._reqCounter = 1;
+    this._pendingWorkerReqs = new Map();
+
+    this.onChange = null; // (sentences, meta)
+    this.onStatus = null; // (statusText, state: 'idle'|'loading'|'ready'|'error')
   }
 
   applyPreset(presetId) {
-    const p = LLM_PRESETS[presetId] || LLM_PRESETS.gemini;
+    const p = LLM_PRESETS[presetId] || LLM_PRESETS.browser;
     this.providerId = p.id;
     this.config.protocol = p.protocol;
     this.config.endpoint = p.endpoint;
@@ -96,25 +116,116 @@ export class PalimpsestEngine {
   }
 
   /**
-   * Seeds the opening emerging palimpsest immediately on load.
+   * Awakens the zero-key in-browser Qwen2.5 LLM inside a dedicated Web Worker.
    */
-  seedInitial(lang = "fr") {
-    this.sentences = [];
-    this._nextId = 1;
-    const ops = this.generateLocalOps(lang, { initial: true });
-    this.applyOps(ops, "local");
-    this._lastPulseAt = performance.now();
+  async initBrowserLLM(lang = "fr") {
+    if (this.browserLlmState === "ready" && this._worker) {
+      this.providerId = "browser";
+      this.config.protocol = "browser";
+      this.llmEnabled = true;
+      this._emitStatus(
+        lang === "fr"
+          ? `LLM Navigateur prêt (${this.browserLlmDevice || "wasm"})`
+          : `Browser LLM ready (${this.browserLlmDevice || "wasm"})`,
+        "ready"
+      );
+      return true;
+    }
+
+    if (this.browserLlmState === "loading") return false;
+
+    this.providerId = "browser";
+    this.config.protocol = "browser";
+    this.config.model = LLM_PRESETS.browser.model;
+    this.browserLlmState = "loading";
+    this.browserLlmProgress = 2;
+    this._emitStatus(
+      lang === "fr"
+        ? "Éveil du LLM navigateur (Qwen2.5 · 2%)…"
+        : "Awakening Browser LLM (Qwen2.5 · 2%)…",
+      "loading"
+    );
+    this._notifyChange();
+
+    return new Promise((resolve) => {
+      try {
+        if (!this._worker) {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=4", import.meta.url), {
+            type: "module",
+          });
+        }
+
+        const handleInitMsg = (ev) => {
+          const msg = ev.data || {};
+          if (msg.type === "progress") {
+            this.browserLlmProgress = Math.max(this.browserLlmProgress, msg.progress || 0);
+            const label =
+              msg.status === "fallback-wasm"
+                ? lang === "fr"
+                  ? "WebGPU indisponible — bascule WASM…"
+                  : "WebGPU unavailable — switching to WASM…"
+                : lang === "fr"
+                ? `Téléchargement Qwen2.5 (${this.browserLlmProgress}%)…`
+                : `Downloading Qwen2.5 (${this.browserLlmProgress}%)…`;
+            this._emitStatus(label, "loading");
+            this._notifyChange();
+          } else if (msg.type === "ready") {
+            this._worker.removeEventListener("message", handleInitMsg);
+            this._attachWorkerListener();
+            this.browserLlmState = "ready";
+            this.browserLlmProgress = 100;
+            this.browserLlmDevice = msg.device || "webgpu";
+            this.llmEnabled = true;
+            this._emitStatus(
+              lang === "fr"
+                ? `LLM Navigateur actif · Qwen2.5 (${this.browserLlmDevice})`
+                : `Browser LLM active · Qwen2.5 (${this.browserLlmDevice})`,
+              "ready"
+            );
+            this._notifyChange();
+            resolve(true);
+          } else if (msg.type === "error" && !msg.requestId) {
+            this._worker.removeEventListener("message", handleInitMsg);
+            this.browserLlmState = "error";
+            this._emitStatus(`Erreur LLM navigateur : ${msg.message}`, "error");
+            this._notifyChange();
+            resolve(false);
+          }
+        };
+
+        this._worker.addEventListener("message", handleInitMsg);
+        this._worker.postMessage({ type: "init", modelId: this.config.model });
+      } catch (err) {
+        this.browserLlmState = "error";
+        this._emitStatus(`Erreur Worker : ${err.message}`, "error");
+        this._notifyChange();
+        resolve(false);
+      }
+    });
+  }
+
+  _attachWorkerListener() {
+    if (!this._worker || this._worker._attached) return;
+    this._worker._attached = true;
+    this._worker.addEventListener("message", (ev) => {
+      const msg = ev.data || {};
+      if (!msg.requestId || !this._pendingWorkerReqs.has(msg.requestId)) return;
+      const { resolve, reject } = this._pendingWorkerReqs.get(msg.requestId);
+      this._pendingWorkerReqs.delete(msg.requestId);
+      if (msg.type === "result") resolve(msg.text);
+      else reject(new Error(msg.message || "Worker generation error"));
+    });
   }
 
   /**
-   * Schedules a contemplative delayed reorganization when a human edits their concept
-   * or when the underlying topology undergoes a meaningful shift.
+   * Schedules a contemplative delayed LLM pulse after a concept change or topology shift.
    */
   scheduleGestation(lang = "fr", trigger = null, immediate = false) {
+    if (!this.llmEnabled) return;
     if (trigger) this._pendingTrigger = trigger;
     if (this._gestationTimer) clearTimeout(this._gestationTimer);
 
-    const delay = immediate ? 180 : this.gestationDelayMs;
+    const delay = immediate ? 200 : this.gestationDelayMs;
     this.isGestating = true;
     this._notifyChange();
 
@@ -124,13 +235,9 @@ export class PalimpsestEngine {
     }, delay);
   }
 
-  /**
-   * Periodic tick from main loop: cleans up dissolved ghosts and triggers organic ambient morphs.
-   */
   tick(now, lang = "fr") {
     let changed = false;
 
-    // 1. Transition newly emerging / morphing sentences to calm "alive" state after animation settles
     for (const s of this.sentences) {
       if (s.status === "emerging" && now - s.bornAt > 2400) {
         s.status = "alive";
@@ -142,7 +249,6 @@ export class PalimpsestEngine {
       }
     }
 
-    // 2. Expire lingering ghost sentences once their memory duration elapses
     const beforeLen = this.sentences.length;
     this.sentences = this.sentences.filter((s) => {
       if (s.status !== "lingering") return true;
@@ -152,22 +258,20 @@ export class PalimpsestEngine {
 
     if (changed) this._notifyChange();
 
-    // 3. Ambient reorganization when underlying topology has drifted enough
+    // Organic ambient drift when LLM is active and underlying map has shifted
     if (
+      this.llmEnabled &&
       !this.isGestating &&
       !this._inFlight &&
       now - this._lastPulseAt > this.ambientIntervalMs &&
-      this.topology.telemetry.totalDisplacement > 0.55
+      this.topology.telemetry.totalDisplacement > 0.65
     ) {
       this.scheduleGestation(lang, { source: "topology" }, false);
     }
   }
 
-  /**
-   * Executes one morphogenetic pulse (via connected LLM if enabled, else instant local synthesizer).
-   */
   async pulse(lang = "fr") {
-    if (this._inFlight) return;
+    if (!this.llmEnabled || this._inFlight) return;
     this._inFlight = true;
     this.isGestating = true;
     this._lastPulseAt = performance.now();
@@ -177,27 +281,30 @@ export class PalimpsestEngine {
     this._pendingTrigger = null;
 
     try {
-      if (this.llmEnabled) {
-        this._emitStatus(lang === "fr" ? "Réfraction LLM en cours…" : "LLM refraction focusing…", true);
-        const ops = await this.generateLLMOps(lang, trigger);
-        if (ops && ops.length > 0) {
-          this.applyOps(ops, "llm");
-          const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-          this._emitStatus(
-            lang === "fr" ? `Miroir LLM (${this.config.model}) · ${ts}` : `LLM Mirror (${this.config.model}) · ${ts}`,
-            true
-          );
-          return;
-        }
+      this._emitStatus(
+        lang === "fr" ? "Le LLM contemple le nuage…" : "LLM contemplating the word cloud…",
+        "loading"
+      );
+      const messages = this.buildAssociativeMessages(lang, trigger);
+      const rawText = await this.invokeLLM(messages, lang);
+      const cleanLines = this.parseFreeSentences(rawText);
+
+      if (cleanLines.length > 0) {
+        this.reconcileFreeSentences(cleanLines);
+        const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const modelShort = this.config.protocol === "browser"
+          ? `Qwen2.5 (${this.browserLlmDevice || "browser"})`
+          : this.config.model;
+        this._emitStatus(
+          lang === "fr" ? `LLM actif · ${modelShort} · ${ts}` : `LLM active · ${modelShort} · ${ts}`,
+          "ready"
+        );
+      } else {
+        throw new Error(lang === "fr" ? "Réponse vide du modèle" : "Empty model output");
       }
-      // Local poetic morphogenetic fallback
-      const ops = this.generateLocalOps(lang, { trigger });
-      this.applyOps(ops, "local");
     } catch (err) {
-      console.warn("Palimpsest LLM pulse fell back to local synthesizer:", err);
-      this._emitStatus(`Fallback local (${err.message})`, false);
-      const ops = this.generateLocalOps(lang, { trigger });
-      this.applyOps(ops, "local");
+      console.warn("Palimpsest LLM pulse error:", err);
+      this._emitStatus(`Erreur LLM (${err.message})`, "error");
     } finally {
       this._inFlight = false;
       this.isGestating = false;
@@ -206,164 +313,118 @@ export class PalimpsestEngine {
   }
 
   /**
-   * Applies incremental morphogenetic operations (keep / morph / emerge / fade)
-   * while preserving stable sentence IDs so DOM nodes smoothly rearrange via FLIP animation.
+   * Builds an open, free-associative prompt confronting the LLM directly with the living word cloud / dynamic map.
    */
-  applyOps(ops, origin = "local") {
-    const now = performance.now();
-    const byId = new Map(this.sentences.map((s) => [s.id, s]));
-    const activeOrder = [];
+  buildAssociativeMessages(lang = "fr", trigger = null) {
+    const cells = Array.from(this.topology.cells.values());
+    const humans = cells.filter((c) => c.isHuman);
+    const others = cells.filter((c) => !c.isHuman);
 
-    for (const op of ops) {
-      if (!op || !op.action) continue;
-      const action = op.action.toLowerCase();
+    const stanceFR = { assert: "", question: " (?)", negate: " (nié / en tension)", bridge: " (pont)" };
+    const stanceEN = { assert: "", question: " (?)", negate: " (negated / in tension)", bridge: " (bridge)" };
+    const sMap = lang === "fr" ? stanceFR : stanceEN;
 
-      if (action === "fade" && op.id && byId.has(op.id)) {
-        const node = byId.get(op.id);
-        if (node.status !== "lingering") {
-          node.status = "lingering";
-          node.fadingSince = now;
-        }
-        continue;
+    const humanStr = humans
+      .map((c) => `« ${c.term} »${sMap[c.stance] || ""}`)
+      .join(", ");
+
+    // Group active words into the live constellations from the dynamic map
+    const uniqueCloud = [];
+    const seen = new Set(humans.map((h) => h.term.toLowerCase()));
+    for (const c of others) {
+      const low = c.term.toLowerCase();
+      if (!seen.has(low)) {
+        seen.add(low);
+        uniqueCloud.push(`${c.term}${sMap[c.stance] || ""}`);
       }
-
-      if (action === "keep" && op.id && byId.has(op.id)) {
-        const node = byId.get(op.id);
-        if (node.status === "lingering") {
-          node.status = "emerging";
-          node.bornAt = now;
-          node.fadingSince = null;
-        }
-        if (Array.isArray(op.anchors) && op.anchors.length) {
-          node.anchors = op.anchors.slice(0, 4);
-        }
-        node.order = typeof op.order === "number" ? op.order : activeOrder.length;
-        activeOrder.push(node);
-        continue;
-      }
-
-      if (action === "morph" && op.id && byId.has(op.id) && op.text) {
-        const node = byId.get(op.id);
-        const cleanText = String(op.text).trim();
-        if (cleanText && cleanText !== node.text) {
-          node.prevText = node.text;
-          node.text = cleanText;
-          node.status = "morphing";
-          node.morphedAt = now;
-          node.fadingSince = null;
-          node.origin = origin;
-        }
-        if (Array.isArray(op.anchors) && op.anchors.length) {
-          node.anchors = op.anchors.slice(0, 4);
-        }
-        if (op.role) node.role = op.role;
-        node.order = typeof op.order === "number" ? op.order : activeOrder.length;
-        activeOrder.push(node);
-        continue;
-      }
-
-      if (action === "emerge" && op.text) {
-        const cleanText = String(op.text).trim();
-        if (!cleanText) continue;
-        const node = {
-          id: `s${this._nextId++}`,
-          text: cleanText,
-          prevText: null,
-          anchors: Array.isArray(op.anchors) ? op.anchors.slice(0, 4) : [],
-          role: op.role || "body",
-          status: "emerging",
-          origin,
-          order: typeof op.order === "number" ? op.order : activeOrder.length,
-          bornAt: now,
-          morphedAt: now,
-          fadingSince: null,
-        };
-        this.sentences.push(node);
-        byId.set(node.id, node);
-        activeOrder.push(node);
-      }
+      if (uniqueCloud.length >= 12) break;
     }
 
-    // Keep live sentence count organic (4..6 active + up to 3 lingering memory traces)
-    const active = this.sentences
+    const tensions = this.mirror.axes.slice(0, 2).map((a) => a.label).join(" ; ");
+    const prevAlive = this.sentences
       .filter((s) => s.status !== "lingering")
-      .sort((a, b) => a.order - b.order);
+      .slice(0, 3)
+      .map((s) => s.text)
+      .join("\n");
 
-    while (active.length > 6) {
-      const oldest = active.pop();
-      oldest.status = "lingering";
-      oldest.fadingSince = now;
+    if (lang === "fr") {
+      const system = [
+        "Tu contemples un nuage vivant de mots qui évolue en temps réel.",
+        "Laisse venir librement tout ce que cette constellation éveille en toi : images, pensées, associations inattendues, aphorismes, questions ou tensions.",
+        "Écris exactement 3 ou 4 phrases courtes et fluides (une phrase par ligne) en français naturel, clair et évocateur.",
+        "Aucune liste à puces, aucune numérotation, aucun titre, aucun commentaire sur le « nuage » ou l’« utilisateur ».",
+        "Écris uniquement la pensée vivante qui te vient à l’esprit.",
+      ].join(" ");
+
+      const userParts = [
+        `Mots au premier plan : ${humanStr || "transindividuation"}`,
+        uniqueCloud.length ? `Mots alentour sur la carte : ${uniqueCloud.join(", ")}` : "",
+        tensions ? `Tensions présentes : ${tensions}` : "",
+        trigger?.term ? `Mot qui vient d’apparaître ou de bouger : « ${trigger.term} »` : "",
+        prevAlive
+          ? `Phrases qui flottaient juste avant (laisse certaines se prolonger ou se métamorphoser, et laisse naître du neuf) :\n${prevAlive}`
+          : "",
+      ].filter(Boolean);
+
+      return [
+        { role: "system", content: system },
+        { role: "user", content: userParts.join("\n") },
+      ];
     }
 
-    // Limit lingering traces to 3 most recent so the palimpsest stays breathable
-    const lingering = this.sentences
-      .filter((s) => s.status === "lingering")
-      .sort((a, b) => (b.fadingSince || 0) - (a.fadingSince || 0))
-      .slice(0, 3);
+    const system = [
+      "You are contemplating a living cloud of words evolving in real time.",
+      "Freely write whatever genuinely comes to mind when confronted with this constellation: images, thoughts, unexpected associations, aphorisms, questions, or tensions.",
+      "Write exactly 3 or 4 short, fluid sentences (one sentence per line) in natural, vivid English.",
+      "No bullet points, no numbering, no titles, never mention 'word cloud' or 'user', and never explain.",
+      "Write only the emerging thoughts themselves.",
+    ].join(" ");
 
-    // Reassemble: active sentences in their rearranged order, lingering ghosts gently interwoven or trailing
-    this.sentences = [...active, ...lingering];
-    this._notifyChange();
+    const userParts = [
+      `Foreground words: ${humanStr || "transindividuation"}`,
+      uniqueCloud.length ? `Surrounding words on the map: ${uniqueCloud.join(", ")}` : "",
+      tensions ? `Active tensions: ${tensions}` : "",
+      trigger?.term ? `Word that just appeared or shifted: "${trigger.term}"` : "",
+      prevAlive
+        ? `Thoughts lingering just before (let some evolve or shift, and let new ones arise):\n${prevAlive}`
+        : "",
+    ].filter(Boolean);
+
+    return [
+      { role: "system", content: system },
+      { role: "user", content: userParts.join("\n") },
+    ];
   }
 
-  /**
-   * Calls the configured LLM (Gemini native REST OR OpenAI-compatible Chat Completions)
-   * with the current palimpsest and live underlying noetic topology.
-   */
-  async generateLLMOps(lang, trigger) {
+  async invokeLLM(messages, lang = "fr") {
+    const protocol = this.config.protocol || "browser";
+
+    if (protocol === "browser") {
+      if (this.browserLlmState !== "ready" || !this._worker) {
+        const ok = await this.initBrowserLLM(lang);
+        if (!ok) throw new Error("Browser LLM unavailable");
+      }
+      const requestId = this._reqCounter++;
+      return new Promise((resolve, reject) => {
+        this._pendingWorkerReqs.set(requestId, { resolve, reject });
+        this._worker.postMessage({
+          type: "generate",
+          requestId,
+          messages,
+          maxNewTokens: 155,
+          temperature: 0.86,
+        });
+      });
+    }
+
     const endpoint = (this.config.endpoint || "").trim();
     const model = (this.config.model || "").trim();
     const apiKey = (this.config.apiKey || "").trim();
-    const protocol = this.config.protocol || "openai";
-
     const isLocal = endpoint.includes("localhost") || endpoint.includes("127.0.0.1");
+
     if (!isLocal && !apiKey) {
       throw new Error(lang === "fr" ? "Clé API requise" : "API key required");
     }
-
-    const cells = Array.from(this.topology.cells.values());
-    const humanCells = cells
-      .filter((c) => c.isHuman)
-      .map((c) => ({ term: c.term, stance: c.stance, weight: c.intensity || 1.0 }));
-    const fieldCells = cells
-      .filter((c) => !c.isHuman)
-      .slice(0, 16)
-      .map((c) => `${c.term}${c.stance !== "assert" ? ` (${c.stance})` : ""}`);
-
-    const snapshot = {
-      language: lang === "fr" ? "French" : "English",
-      phase: this.topology.telemetry.phase,
-      metastability: this.topology.telemetry.metastability,
-      emergent_compass: this.topology.compass,
-      human_cells: humanCells,
-      recent_trigger: trigger || null,
-      collective_cells: fieldCells,
-      emergent_basins: this.mirror.basins.map((b) => ({
-        regime: b.label,
-        terms: b.members.map((m) => m.term),
-      })),
-      dialectical_tensions: this.mirror.axes.map((a) => a.label),
-      current_palimpsest: this.sentences
-        .filter((s) => s.status !== "lingering")
-        .map((s, idx) => ({ id: s.id, order: idx, text: s.text, anchors: s.anchors })),
-    };
-
-    const systemPrompt = [
-      "You are NOT an assistant, chatbot, or summarizer.",
-      "You are the emerging collective text of a Noetic Poietic Generator (inspired by Olivier Auber's Poietic Generator and Gilbert Simondon's transindividuation).",
-      "Your task is to gradually evolve a living literary-philosophical palimpsest of 4 to 5 concise sentences (10–24 words each) that comes into focus, rearranges, morphs, and dissolves in response to the shifting underlying noetic topology.",
-      "Strict Aesthetic & Epistemic Rules:",
-      "- NEVER address a user, NEVER explain the tool, NEVER write meta-commentary like 'The group thinks...'.",
-      "- Write directly from inside the emergent collective thought—luminous, tactile, philosophically incisive prose.",
-      "- Preserve dialectical tensions; do NOT flatten oppositions into bland consensus.",
-      "- Always integrate newly changed human_cells naturally into the evolving phrasing.",
-      "- Prefer gradual metamorphosis over full rewrites: keep 1–3 sentences (optionally reordering them), morph 1–2 sentences whose meaning is bending, emerge 1–2 new sentences, and fade 1–2 sentences whose anchors have drifted.",
-      `- Write strictly in ${lang === "fr" ? "French" : "English"}.`,
-      "- Respond ONLY with valid JSON:",
-      '  {"ops":[{"action":"keep|morph|emerge|fade","id":"s1 (required for keep/morph/fade)","text":"sentence (for morph/emerge)","anchors":["concept1","concept2"],"role":"opening|body|tension|question","order":0}]}',
-    ].join("\n");
-
-    let rawContent = "";
 
     if (protocol === "gemini") {
       const url = `${endpoint.replace(/\/$/, "")}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -371,12 +432,11 @@ export class PalimpsestEngine {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: "user", parts: [{ text: JSON.stringify(snapshot) }] }],
+          systemInstruction: { parts: [{ text: messages[0].content }] },
+          contents: [{ role: "user", parts: [{ text: messages[1].content }] }],
           generationConfig: {
-            temperature: 0.78,
-            maxOutputTokens: 700,
-            responseMimeType: "application/json",
+            temperature: 0.9,
+            maxOutputTokens: 320,
           },
         }),
       });
@@ -385,218 +445,178 @@ export class PalimpsestEngine {
         throw new Error(`Gemini HTTP ${res.status}${errBody ? `: ${errBody.slice(0, 80)}` : ""}`);
       }
       const data = await res.json();
-      rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    } else {
-      const headers = { "Content-Type": "application/json" };
-      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-      if (this.providerId === "openrouter") {
-        headers["HTTP-Referer"] = window.location.origin;
-        headers["X-Title"] = "Noetic Poietic Generator";
-      }
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
 
-      const body = {
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    if (this.providerId === "openrouter") {
+      headers["HTTP-Referer"] = window.location.origin;
+      headers["X-Title"] = "Noetic Poietic Generator";
+    }
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
         model,
-        temperature: 0.78,
-        max_tokens: 700,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: JSON.stringify(snapshot) },
-        ],
-      };
-      // OpenAI, OpenRouter, Groq support json_object; Ollama local may prefer plain JSON instruction
-      if (!isLocal) {
-        body.response_format = { type: "json_object" };
-      }
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}${errBody ? `: ${errBody.slice(0, 80)}` : ""}`);
-      }
-      const data = await res.json();
-      rawContent = data.choices?.[0]?.message?.content || "";
+        temperature: 0.9,
+        max_tokens: 320,
+        messages,
+      }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}${errBody ? `: ${errBody.slice(0, 80)}` : ""}`);
     }
-
-    const parsed = this.extractJSON(rawContent);
-    if (!parsed || !Array.isArray(parsed.ops)) {
-      throw new Error("Invalid JSON ops from LLM");
-    }
-    return parsed.ops;
-  }
-
-  extractJSON(raw) {
-    const trimmed = String(raw || "").trim();
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      const match = trimmed.match(/\{[\s\S]*\}/);
-      if (match) return JSON.parse(match[0]);
-      return null;
-    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
   }
 
   /**
-   * Instant poetic-philosophical local morphogenetic synthesizer.
-   * Mirrors the exact keep / morph / emerge / fade / rearrange lifecycle until an LLM is connected.
+   * Splits natural LLM output into 3–5 clean, standalone sentences.
    */
-  generateLocalOps(lang = "fr", { initial = false, trigger = null } = {}) {
+  parseFreeSentences(rawText) {
+    const cleaned = String(rawText || "")
+      .replace(/\r/g, "\n")
+      .replace(/^[\s•\-–—*\d.)]+/gm, "")
+      .trim();
+
+    if (!cleaned) return [];
+
+    // First split by newlines; if model wrote a single paragraph, split by sentence punctuation
+    let lines = cleaned
+      .split(/\n+/)
+      .map((l) => l.trim().replace(/^["«»]|["«»]$/g, "").trim())
+      .filter((l) => l.length >= 14);
+
+    if (lines.length <= 1 && cleaned.length > 60) {
+      lines = cleaned
+        .split(/(?<=[.!?…])\s+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length >= 14);
+    }
+
+    return lines.slice(0, 5);
+  }
+
+  /**
+   * Matches the LLM's fresh free-associative sentences against currently displayed sentences
+   * using semantic embeddings so they rearrange smoothly (FLIP), morph in place with ghost echoes,
+   * slowly focus in, and linger before dissolving.
+   */
+  reconcileFreeSentences(newTexts) {
+    const now = performance.now();
+    const activeOld = this.sentences.filter((s) => s.status !== "lingering");
     const cells = Array.from(this.topology.cells.values());
-    const human = cells.find((c) => c.isLocal) || cells.find((c) => c.isHuman) || cells[0];
-    const hTerm = trigger?.term || human?.term || (lang === "fr" ? "transindividuation" : "transindividuation");
-    const hStance = trigger?.stance || human?.stance || "assert";
 
-    const compass = this.topology.compass;
-    const basins = this.mirror.basins;
-    const axes = this.mirror.axes;
-    const phase = this.topology.telemetry.phase;
-
-    const topBasin = basins[0]?.regimePrimary || compass.east;
-    const secondBasin = basins[1]?.regimePrimary || compass.west;
-    const b1Term = basins[0]?.members?.[0]?.term || cells[1]?.term || hTerm;
-    const b2Term = basins[1]?.members?.[0]?.term || cells[2]?.term || secondBasin;
-    const fault = axes[0]?.label || `${compass.west} ↔ ${compass.east}`;
-
-    const poolFR = {
-      assert: [
-        `Dans la trame qui s’éveille autour de « ${hTerm} », le champ cherche une consistance sans se figer en système.`,
-        `À mesure que « ${hTerm} » s’ancre dans le milieu, l’horizon de ${topBasin} infléchit silencieusement la gravité commune.`,
-        `Ce qui affleure entre « ${hTerm} » et « ${b1Term} » n’appartient à personne : une forme transindividuelle prend corps.`,
-      ],
-      question: [
-        `Quel seuil s’ouvre lorsque « ${hTerm} » demeure en suspens face à l’attraction de ${topBasin} ?`,
-        `Interroger « ${hTerm} » empêche le milieu de se clore et ravive la respiration entre ${compass.west} et ${compass.east}.`,
-      ],
-      negate: [
-        `En refusant « ${hTerm} », une faille nette tranche le consensus et force l’espace noétique à se reconfigurer.`,
-        `La résistance portée contre « ${hTerm} » creuse un contre-champ où ${secondBasin} reprend droit de cité.`,
-      ],
-      bridge: [
-        `Jeté comme un passeur, « ${hTerm} » tisse une couture fragile entre ${topBasin} et ${secondBasin}.`,
-        `Par la médiation de « ${hTerm} », deux bassins étrangers commencent à résonner sans effacer leur écart.`,
-      ],
-      tension: [
-        `La ligne de tension ${fault} empêche la pensée commune de s’affaisser dans la répétition.`,
-        `Sous la surface, « ${b1Term} » et « ${b2Term} » maintiennent une métastabilité féconde qui appelle un déplacement.`,
-        `Aucun centre ne commande : l’écart entre ${compass.north} et ${compass.south} redistribue les voisinages.`,
-      ],
-      phase: {
-        diffuse: `Encore pré-individuel, le champ tâtonne entre fragments épars avant qu’un contour partagé n’émerge.`,
-        metastable: `L’équilibre demeure métastable — assez structuré pour faire sens, assez tendu pour bifurquer d’un seul mot.`,
-        crystallizing: `Un foyer de simplicité inattendue se cristallise autour de ${topBasin}, prêt à basculer au prochain geste.`,
-        polarized: `Deux pôles se font face le long de ${fault}, dessinant un espace dramatique où chaque terme pèse double.`,
-      },
+    // Helper: find top 2 live concept cells anchoring a given sentence (for hover illumination)
+    const computeAnchors = (sentenceText) => {
+      const low = sentenceText.toLowerCase();
+      const sVec = this.semantic.embedSync(sentenceText);
+      const scored = [];
+      const seenTerm = new Set();
+      for (const c of cells) {
+        const tLow = c.term.toLowerCase();
+        if (seenTerm.has(tLow)) continue;
+        seenTerm.add(tLow);
+        let score = cosineSimilarity(sVec, c.embedding || this.semantic.embedSync(c.term));
+        if (low.includes(tLow)) score += 0.65; // direct lexical appearance in LLM thought
+        scored.push({ term: c.term, score, stance: c.stance });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, 2);
     };
 
-    const poolEN = {
-      assert: [
-        `Across the field gathering around “${hTerm}”, shared thought seeks coherence without hardening into dogma.`,
-        `As “${hTerm}” deepens its pull, the horizon of ${topBasin} quietly tilts the collective frame.`,
-        `What crystallizes between “${hTerm}” and “${b1Term}” belongs to no single mind—a transindividual figure comes into focus.`,
-      ],
-      question: [
-        `What threshold opens when “${hTerm}” remains suspended against the gravity of ${topBasin}?`,
-        `Holding “${hTerm}” as an open question keeps the milieu porous between ${compass.west} and ${compass.east}.`,
-      ],
-      negate: [
-        `Pushing back against “${hTerm}” carves a clean fault line through premature consensus.`,
-        `Resistance to “${hTerm}” opens a counter-valley where ${secondBasin} reclaims its tension.`,
-      ],
-      bridge: [
-        `Thrown across the gap, “${hTerm}” weaves a fragile seam between ${topBasin} and ${secondBasin}.`,
-        `Through the mediation of “${hTerm}”, distant basins begin to resonate without erasing their difference.`,
-      ],
-      tension: [
-        `The dialectical ridge ${fault} keeps collective thought from flattening into repetition.`,
-        `Beneath the surface, “${b1Term}” and “${b2Term}” sustain a fertile metastability awaiting the next gesture.`,
-        `No center dictates the form: the span between ${compass.north} and ${compass.south} continually reorders proximity.`,
-      ],
-      phase: {
-        diffuse: `Still pre-individual, the field feels across scattered fragments before a shared contour takes hold.`,
-        metastable: `Equilibrium stays metastable—coherent enough to carry meaning, taut enough to bifurcate on a single word.`,
-        crystallizing: `A basin of unexpected simplicity crystallizes around ${topBasin}, poised to tip at the next inflection.`,
-        polarized: `Two poles confront one another along ${fault}, charging every new concept with structural leverage.`,
-      },
-    };
+    // Build similarity pairs between old active sentences and new LLM sentences
+    const oldVecs = activeOld.map((s) => this.semantic.embedSync(s.text));
+    const newVecs = newTexts.map((txt) => this.semantic.embedSync(txt));
 
-    const P = lang === "fr" ? poolFR : poolEN;
-    const pick = (arr) => arr[this._localTemplateCursor++ % arr.length];
-    const stanceLines = P[hStance] || P.assert;
+    const pairs = [];
+    for (let oi = 0; oi < activeOld.length; oi++) {
+      for (let ni = 0; ni < newTexts.length; ni++) {
+        const sim = cosineSimilarity(oldVecs[oi], newVecs[ni]);
+        if (sim >= 0.34) pairs.push({ oi, ni, sim });
+      }
+    }
+    pairs.sort((a, b) => b.sim - a.sim);
 
-    if (initial || this.sentences.filter((s) => s.status !== "lingering").length === 0) {
-      return [
-        { action: "emerge", text: pick(stanceLines), anchors: [hTerm, b1Term], role: "opening", order: 0 },
-        { action: "emerge", text: pick(P.tension), anchors: [b1Term, b2Term], role: "tension", order: 1 },
-        { action: "emerge", text: P.phase[phase] || P.phase.metastable, anchors: [b1Term], role: "body", order: 2 },
-        {
-          action: "emerge",
-          text: pick(P.question),
-          anchors: [hTerm],
-          role: "question",
-          order: 3,
-        },
-      ];
+    const matchedOld = new Set();
+    const matchedNew = new Map(); // ni -> oldSentence
+    for (const p of pairs) {
+      if (matchedOld.has(p.oi) || matchedNew.has(p.ni)) continue;
+      matchedOld.add(p.oi);
+      matchedNew.set(p.ni, activeOld[p.oi]);
     }
 
-    // Incremental morphogenetic reorganization of existing active sentences!
-    const active = this.sentences.filter((s) => s.status !== "lingering");
-    const ops = [];
+    const nextActive = [];
 
-    // 1. Fade the oldest trailing sentence so memory lingers and dissolves
-    const toFade = active.length >= 4 ? active[active.length - 1] : null;
-    const survivors = toFade ? active.slice(0, -1) : [...active];
-    if (toFade) {
-      ops.push({ action: "fade", id: toFade.id });
+    for (let ni = 0; ni < newTexts.length; ni++) {
+      const txt = newTexts[ni];
+      const anchorObjs = computeAnchors(txt);
+      const anchors = anchorObjs.map((a) => a.term);
+      const hasNegate = anchorObjs.some((a) => a.stance === "negate");
+      const role = txt.endsWith("?")
+        ? "question"
+        : hasNegate
+        ? "tension"
+        : ni === 0
+        ? "opening"
+        : "body";
+
+      if (matchedNew.has(ni)) {
+        // Morph existing sentence in place (preserves ID for smooth FLIP glide!)
+        const node = matchedNew.get(ni);
+        if (node.text !== txt) {
+          node.prevText = node.text;
+          node.text = txt;
+          node.status = "morphing";
+          node.morphedAt = now;
+        } else {
+          node.status = "alive";
+        }
+        node.anchors = anchors;
+        node.role = role;
+        node.order = ni;
+        node.fadingSince = null;
+        nextActive.push(node);
+      } else {
+        // Brand-new associative sentence slowly coming into focus
+        nextActive.push({
+          id: `s${this._nextId++}`,
+          text: txt,
+          prevText: null,
+          anchors,
+          role,
+          status: "emerging",
+          origin: "llm",
+          order: ni,
+          bornAt: now,
+          morphedAt: now,
+          fadingSince: null,
+        });
+      }
     }
 
-    // 2. Rearrange survivors gently (bring a middle tension/body upward so sentences physically glide!)
-    if (survivors.length >= 2) {
-      const moved = survivors.splice(1, 1)[0];
-      survivors.unshift(moved);
+    // Unmatched old sentences transition into lingering pale ghost memory
+    const newlyLingering = [];
+    for (let oi = 0; oi < activeOld.length; oi++) {
+      if (!matchedOld.has(oi)) {
+        const oldNode = activeOld[oi];
+        oldNode.status = "lingering";
+        oldNode.fadingSince = now;
+        oldNode.prevText = null;
+        newlyLingering.push(oldNode);
+      }
     }
 
-    // 3. Morph the primary sentence to absorb the human's gesture or latest phase shift
-    if (survivors.length > 0) {
-      const target = survivors[0];
-      const nextText = trigger?.source === "human" ? pick(stanceLines) : P.phase[phase] || pick(P.tension);
-      ops.push({
-        action: "morph",
-        id: target.id,
-        text: nextText,
-        anchors: [hTerm, b1Term].filter(Boolean),
-        role: trigger?.source === "human" ? (hStance === "negate" ? "tension" : "opening") : "body",
-        order: 0,
-      });
-    }
+    const existingLingering = this.sentences.filter((s) => s.status === "lingering");
+    const lingering = [...newlyLingering, ...existingLingering]
+      .sort((a, b) => (b.fadingSince || 0) - (a.fadingSince || 0))
+      .slice(0, 3);
 
-    // 4. Keep remaining survivors in their rearranged order
-    for (let i = 1; i < survivors.length; i++) {
-      ops.push({
-        action: "keep",
-        id: survivors[i].id,
-        order: i,
-      });
-    }
-
-    // 5. Emerge one fresh sentence reflecting the newest tension or human inflection
-    const freshText =
-      trigger?.source === "human"
-        ? pick(P.tension)
-        : Math.random() < 0.5
-        ? pick(stanceLines)
-        : pick(P.question);
-    ops.push({
-      action: "emerge",
-      text: freshText,
-      anchors: trigger?.source === "human" ? [hTerm, b2Term] : [b1Term, b2Term],
-      role: trigger?.source === "human" ? "tension" : "body",
-      order: survivors.length,
-    });
-
-    return ops;
+    this.sentences = [...nextActive, ...lingering];
+    this._notifyChange();
   }
 
   _notifyChange() {
@@ -604,11 +624,13 @@ export class PalimpsestEngine {
       this.onChange(this.sentences, {
         isGestating: this.isGestating,
         llmEnabled: this.llmEnabled,
+        browserLlmState: this.browserLlmState,
+        browserLlmProgress: this.browserLlmProgress,
       });
     }
   }
 
-  _emitStatus(msg, isLlm) {
-    if (this.onStatus) this.onStatus(msg, isLlm);
+  _emitStatus(msg, state = "idle") {
+    if (this.onStatus) this.onStatus(msg, state);
   }
 }

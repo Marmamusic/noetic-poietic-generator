@@ -298,6 +298,129 @@ body.mode-palimpsest #noetic-canvas {
   50% { opacity: 1; }
 }
 
+/* Honest Pre-LLM Awakening Stage */
+.pal-onboarding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  padding: 12px 6px 10px;
+}
+
+.pal-cloud-preview {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 11px;
+  max-width: 600px;
+  padding: 6px 0;
+}
+
+.cloud-word {
+  font-family: var(--font-serif);
+  font-size: 1.04rem;
+  color: rgba(203, 213, 225, 0.78);
+  transition: color 0.3s ease, transform 0.3s ease;
+}
+
+.cloud-word.human {
+  font-size: 1.28rem;
+  color: #f8fafc;
+  text-shadow: 0 0 18px rgba(125, 211, 252, 0.45);
+}
+
+.cloud-word.negate {
+  color: #fda4af;
+  font-style: italic;
+}
+
+.pal-onboard-copy {
+  max-width: 540px;
+  font-size: 0.82rem;
+  line-height: 1.56;
+  color: var(--text-secondary);
+}
+
+.pal-onboard-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.awaken-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(129, 140, 248, 0.22));
+  color: #f0f9ff;
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 0 28px rgba(56, 189, 248, 0.16);
+  transition: all 0.22s ease;
+}
+
+.awaken-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.34), rgba(129, 140, 248, 0.32));
+  border-color: #bae6fd;
+  transform: translateY(-1px);
+}
+
+.awaken-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.link-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: color 0.2s ease;
+}
+
+.link-btn:hover {
+  color: var(--accent-cyan);
+}
+
+.pal-progress-wrap {
+  width: min(380px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pal-progress-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.pal-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  transition: width 0.25s ease;
+}
+
+.pal-progress-text {
+  font-size: 0.7rem;
+  color: var(--accent-cyan);
+  min-width: 36px;
+  text-align: right;
+}
+
 .pal-stream {
   display: flex;
   flex-direction: column;
