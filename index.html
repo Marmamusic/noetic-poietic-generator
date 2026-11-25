@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Générateur Poïétique Noétique — Noetic Poietic Generator</title>
+  <meta name="description" content="Real-time collective noetic field inspired by Olivier Auber's Poietic Generator and Gilbert Simondon's transindividuation." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Full-bleed Noetic Field Canvas -->
+  <canvas id="noetic-canvas" aria-label="Noetic Poietic Field"></canvas>
+
+  <!-- Top Minimalist Anoptical Bar -->
+  <header class="top-bar">
+    <div class="brand">
+      <span class="brand-dot" id="phase-dot" title="Phase"></span>
+      <div>
+        <h1 class="brand-title" data-i18n="title">Générateur Poïétique Noétique</h1>
+        <p class="brand-sub" data-i18n="subtitle">Miroir anoptique de transindividuation collective</p>
+      </div>
+    </div>
+
+    <div class="controls-cluster">
+      <!-- Topology Toggle: Semantic Manifold vs Auberian Spiral -->
+      <div class="segmented" role="group" aria-label="Topology">
+        <button id="btn-topo-manifold" class="seg-btn active" data-i18n="topoManifold">Champ</button>
+        <button id="btn-topo-spiral" class="seg-btn" data-i18n="topoSpiral">Spirale</button>
+      </div>
+
+      <!-- Mirror Layer Toggle -->
+      <button id="btn-toggle-mirror" class="pill-btn active" title="Toggle Overhead Mirror">
+        <span class="icon-glyph">◎</span>
+        <span data-i18n="mirrorLabel">Miroir</span>
+      </button>
+
+      <!-- Embedding Engine Status / Neural Upgrade -->
+      <button id="btn-neural" class="pill-btn" title="Upgrade to browser-native neural embeddings">
+        <span class="status-led" id="neural-led"></span>
+        <span id="neural-label" data-i18n="engineFast">Géométrie</span>
+      </button>
+
+      <!-- Swarm Controls -->
+      <button id="btn-swarm-panel" class="pill-btn">
+        <span class="icon-glyph">❖</span>
+        <span data-i18n="swarmLabel">Essaim</span>
+        <span class="badge" id="swarm-count-badge">16</span>
+      </button>
+
+      <!-- Multiplayer Room -->
+      <button id="btn-room-panel" class="pill-btn">
+        <span class="icon-glyph">☍</span>
+        <span id="room-badge" data-i18n="roomLocal">Local</span>
+      </button>
+
+      <!-- Optional BYOK Overhead LLM Mirror -->
+      <button id="btn-llm-panel" class="pill-btn" title="Optional Overhead LLM Mirror">
+        <span class="icon-glyph">◈</span>
+        <span data-i18n="llmLabel">IA Miroir</span>
+      </button>
+
+      <!-- Language Switch -->
+      <button id="btn-lang" class="pill-btn mono">FR</button>
+
+      <!-- Philosophy / Help -->
+      <button id="btn-help" class="icon-btn" title="Manifeste / Guide">?</button>
+    </div>
+  </header>
+
+  <!-- Subtle Telemetry Strip (Top-Left under header) -->
+  <aside class="telemetry-strip" aria-label="Field Telemetry">
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricPhase">Phase</span>
+      <span class="metric-val accent" id="val-phase">Métastable</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricMetastability">Métastabilité</span>
+      <span class="metric-val mono" id="val-metastability">0.00</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricEntropy">Entropie</span>
+      <span class="metric-val mono" id="val-entropy">0.00</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricTension">Tension</span>
+      <span class="metric-val mono" id="val-tension">0.00</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricSimplicity">Simplicité</span>
+      <span class="metric-val mono" id="val-simplicity">0.00</span>
+    </div>
+    <div class="metric">
+      <span class="metric-label" data-i18n="metricCells">Cellules</span>
+      <span class="metric-val mono" id="val-cells">1</span>
+    </div>
+  </aside>
+
+  <!-- Anoptical Transparency Inspector (Right drawer, opens on canvas element click) -->
+  <aside class="inspector hidden" id="inspector-panel" aria-label="Anoptical Inspector">
+    <div class="inspector-header">
+      <span class="inspector-kicker" id="inspector-kicker">PROVENANCE ANOPTIQUE</span>
+      <button class="close-btn" id="btn-close-inspector" aria-label="Close">×</button>
+    </div>
+    <h2 class="inspector-title" id="inspector-title">—</h2>
+    <div class="inspector-body" id="inspector-body"></div>
+  </aside>
+
+  <!-- Popover: Swarm Configuration -->
+  <section class="popover hidden" id="popover-swarm">
+    <div class="popover-head">
+      <h3 data-i18n="swarmTitle">Essaim synthétique (Auber–Dessalles)</h3>
+      <button class="close-btn" data-close="popover-swarm">×</button>
+    </div>
+    <p class="popover-desc" data-i18n="swarmDesc">
+      Agents autonomes hétérogènes (résonateurs, dialecticiens, passeurs, simplificateurs, bifurcateurs) pour éprouver la boucle autopoïétique en solo.
+    </p>
+    <div class="field-row">
+      <label for="slider-swarm" data-i18n="swarmAgents">Agents</label>
+      <input type="range" id="slider-swarm" min="0" max="36" step="1" value="16" />
+      <span class="mono" id="label-swarm-val">16</span>
+    </div>
+    <div class="field-row">
+      <label for="slider-tempo" data-i18n="swarmTempo">Rythme</label>
+      <input type="range" id="slider-tempo" min="1" max="10" step="1" value="5" />
+      <span class="mono" id="label-tempo-val">5</span>
+    </div>
+    <div class="popover-actions">
+      <button id="btn-swarm-pause" class="action-btn" data-i18n="pause">Pause</button>
+      <button id="btn-swarm-pulse" class="action-btn" data-i18n="swarmPerturb">Perturber</button>
+    </div>
+  </section>
+
+  <!-- Popover: Multiplayer Room (BroadcastChannel + WebRTC P2P) -->
+  <section class="popover hidden" id="popover-room">
+    <div class="popover-head">
+      <h3 data-i18n="roomTitle">Synchronisation Collective</h3>
+      <button class="close-btn" data-close="popover-room">×</button>
+    </div>
+    <p class="popover-desc" data-i18n="roomDesc">
+      Les onglets ouverts sur cet appareil sont synchronisés instantanément. Créez ou rejoignez une salle P2P (WebRTC) pour expérimenter à plusieurs sans serveur.
+    </p>
+    <div class="field-stack">
+      <label for="input-room-code" data-i18n="roomCode">Code de salle P2P</label>
+      <div class="inline-group">
+        <input type="text" id="input-room-code" placeholder="noesis-42" maxlength="28" autocomplete="off" />
+        <button id="btn-room-join" class="action-btn primary" data-i18n="roomJoin">Rejoindre</button>
+      </div>
+    </div>
+    <div class="popover-actions">
+      <button id="btn-room-create" class="action-btn" data-i18n="roomCreate">Créer une salle</button>
+      <button id="btn-room-copy" class="action-btn hidden" data-i18n="roomCopy">Copier le lien</button>
+      <button id="btn-room-leave" class="action-btn hidden" data-i18n="roomLeave">Quitter P2P</button>
+    </div>
+    <p class="status-line mono" id="room-status">BroadcastChannel actif (multi-onglets)</p>
+  </section>
+
+  <!-- Popover: Optional BYOK Overhead LLM Mirror -->
+  <section class="popover hidden" id="popover-llm">
+    <div class="popover-head">
+      <h3 data-i18n="llmTitle">Miroir Méta-Noétique (LLM optionnel)</h3>
+      <button class="close-btn" data-close="popover-llm">×</button>
+    </div>
+    <p class="popover-desc" data-i18n="llmDesc">
+      Par défaut, le miroir géométrique fonctionne localement sans clé API. Vous pouvez activer un observateur LLM non-servile (JSON structuré uniquement, aucun dialogue individuel) pour nommer les bassins et axes dialectiques émergents.
+    </p>
+    <div class="field-stack">
+      <label for="input-llm-endpoint" data-i18n="llmEndpoint">Endpoint (OpenAI / OpenRouter / Ollama)</label>
+      <input type="url" id="input-llm-endpoint" value="https://api.openai.com/v1/chat/completions" />
+    </div>
+    <div class="field-stack">
+      <label for="input-llm-model" data-i18n="llmModel">Modèle</label>
+      <input type="text" id="input-llm-model" value="gpt-4o-mini" />
+    </div>
+    <div class="field-stack">
+      <label for="input-llm-key" data-i18n="llmKey">Clé API (stockée uniquement en session navigateur)</label>
+      <input type="password" id="input-llm-key" placeholder="sk-..." autocomplete="off" />
+    </div>
+    <div class="popover-actions">
+      <button id="btn-llm-toggle" class="action-btn primary" data-i18n="llmEnable">Activer le miroir LLM</button>
+      <button id="btn-llm-trigger" class="action-btn" data-i18n="llmPulse">Refléter maintenant</button>
+    </div>
+    <p class="status-line mono" id="llm-status">Mode géométrique local actif</p>
+  </section>
+
+  <!-- Bottom Floating HUD: Your Local Noetic Cell (Psychic Ergonomics) -->
+  <footer class="hud-container">
+    <div class="cell-hud" aria-label="Your Noetic Cell">
+      <div class="hud-meta">
+        <span class="your-badge" data-i18n="yourCell">VOTRE CELLULE NOÉTIQUE</span>
+        <span class="leverage-readout mono" id="leverage-readout" title="Transductive leverage of your last gesture">ΔM 0.00</span>
+      </div>
+
+      <form id="cell-form" class="cell-input-row" autocomplete="off">
+        <input
+          type="text"
+          id="input-concept"
+          maxlength="34"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="Un mot ou concept (1–3 termes)..."
+          aria-label="Your concept"
+        />
+        <span class="token-counter mono" id="token-counter">1/3</span>
+        <button type="submit" class="emit-btn" data-i18n="emitBtn">Projeter</button>
+      </form>
+
+      <div class="stance-row" role="group" aria-label="Epistemic Stance">
+        <button type="button" class="stance-btn active" data-stance="assert">
+          <span class="stance-sym">●</span>
+          <span data-i18n="stanceAssert">Affirmer</span>
+        </button>
+        <button type="button" class="stance-btn" data-stance="question">
+          <span class="stance-sym">?</span>
+          <span data-i18n="stanceQuestion">Questionner</span>
+        </button>
+        <button type="button" class="stance-btn" data-stance="negate">
+          <span class="stance-sym">⊘</span>
+          <span data-i18n="stanceNegate">Contredire</span>
+        </button>
+        <button type="button" class="stance-btn" data-stance="bridge">
+          <span class="stance-sym">⇄</span>
+          <span data-i18n="stanceBridge">Relier</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Compact Morphogenesis Replay Bar -->
+    <div class="replay-bar" aria-label="Temporal Replay">
+      <button id="btn-replay-mode" class="icon-btn small" title="Replay Morphogenesis">↺</button>
+      <input type="range" id="slider-replay" min="0" max="0" value="0" disabled />
+      <span class="mono replay-label" id="replay-label">LIVE</span>
+      <button id="btn-export-log" class="icon-btn small" title="Export Session JSON">↓</button>
+    </div>
+  </footer>
+
+  <!-- Modal: Philosophy & Anoptical Guide -->
+  <div class="modal-backdrop hidden" id="modal-help">
+    <div class="modal-card">
+      <div class="popover-head">
+        <h2 data-i18n="helpTitle">Générateur Poïétique Noétique</h2>
+        <button class="close-btn" data-close="modal-help">×</button>
+      </div>
+      <div class="modal-content" id="help-content"></div>
+    </div>
+  </div>
+
+  <!-- Subtle Toast Notification -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
