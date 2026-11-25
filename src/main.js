@@ -1,14 +1,14 @@
-// Main Orchestrator for the Noetic Poietic Generator (v4 — Free-Associative Zero-Key Browser LLM + Cloud Presets)
+// Main Orchestrator for the Noetic Poietic Generator (v5 — LLM-Sculpted Dynamic Map & Free-Associative Palimpsest)
 
-import { TRANSLATIONS } from "./i18n.js?v=4";
-import { SemanticEngine } from "./semanticEngine.js?v=4";
-import { TopologyEngine } from "./topologyEngine.js?v=4";
-import { MirrorEngine } from "./mirrorEngine.js?v=4";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=4b";
-import { SwarmEngine } from "./swarmEngine.js?v=4";
-import { SyncEngine } from "./syncEngine.js?v=4";
-import { ReplayEngine } from "./replayEngine.js?v=4";
-import { NoeticRenderer } from "./renderer.js?v=4";
+import { TRANSLATIONS } from "./i18n.js?v=5";
+import { SemanticEngine } from "./semanticEngine.js?v=5";
+import { TopologyEngine } from "./topologyEngine.js?v=5";
+import { MirrorEngine } from "./mirrorEngine.js?v=5";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=5";
+import { SwarmEngine } from "./swarmEngine.js?v=5";
+import { SyncEngine } from "./syncEngine.js?v=5";
+import { ReplayEngine } from "./replayEngine.js?v=5";
+import { NoeticRenderer } from "./renderer.js?v=5";
 
 const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -45,6 +45,7 @@ const el = {
   valSimplicity: document.getElementById("val-simplicity"),
   valCells: document.getElementById("val-cells"),
   palStage: document.getElementById("palimpsest-stage"),
+  palLinksStrip: document.getElementById("pal-links-strip"),
   palOnboarding: document.getElementById("pal-onboarding"),
   palCloudPreview: document.getElementById("pal-cloud-preview"),
   btnAwakenBrowserLlm: document.getElementById("btn-awaken-browser-llm"),
@@ -173,13 +174,44 @@ function renderCloudPreview() {
   el.palCloudPreview.innerHTML = chips.join("");
 }
 
+function renderLlmLinksStrip(links = []) {
+  if (!el.palLinksStrip) return;
+  if (!links || links.length === 0) {
+    el.palLinksStrip.classList.add("hidden");
+    el.palLinksStrip.innerHTML = "";
+    return;
+  }
+  el.palLinksStrip.classList.remove("hidden");
+  el.palLinksStrip.innerHTML = "";
+  for (const lk of links.slice(0, 5)) {
+    const pill = document.createElement("span");
+    pill.className = `llm-link-pill${lk.type === "tension" ? " tension" : ""}`;
+    const sym = lk.type === "tension" ? "↔" : "~";
+    const reasonHtml = lk.reason ? ` <span class="llm-link-reason">· ${escapeHtml(lk.reason)}</span>` : "";
+    pill.innerHTML = `◈ ${escapeHtml(lk.termA)} ${sym} ${escapeHtml(lk.termB)}${reasonHtml}`;
+    pill.addEventListener("mouseenter", () => {
+      hoveredAnchors = new Set([lk.termA.toLowerCase(), lk.termB.toLowerCase()]);
+    });
+    pill.addEventListener("mouseleave", () => {
+      hoveredAnchors.clear();
+    });
+    el.palLinksStrip.appendChild(pill);
+  }
+}
+
 function renderPalimpsestDOM(sentences, meta = {}) {
-  const { isGestating = false, browserLlmState = palimpsest.browserLlmState, browserLlmProgress = palimpsest.browserLlmProgress } = meta;
+  const {
+    isGestating = false,
+    llmLinks = palimpsest.activeLlmLinks,
+    browserLlmState = palimpsest.browserLlmState,
+    browserLlmProgress = palimpsest.browserLlmProgress,
+  } = meta;
   el.palGestation.classList.toggle("hidden", !isGestating);
 
   const hasSentences = sentences && sentences.length > 0;
   el.palOnboarding.classList.toggle("hidden", hasSentences);
   el.palStream.classList.toggle("hidden", !hasSentences);
+  renderLlmLinksStrip(hasSentences ? llmLinks : []);
 
   if (!hasSentences) {
     renderCloudPreview();
@@ -792,8 +824,9 @@ function renderInspector() {
       if (e.a !== cell.id && e.b !== cell.id) continue;
       const other = topology.cells.get(e.a === cell.id ? e.b : e.a);
       if (!other) continue;
-      if (e.type === "tension") tenLinks.push({ term: other.term, weight: e.tension });
-      else resLinks.push({ term: other.term, weight: e.resonance });
+      const tag = e.isLlmLink ? `◈ ${other.term}${e.llmReason ? ` (${e.llmReason})` : ""}` : other.term;
+      if (e.type === "tension") tenLinks.push({ term: tag, weight: e.tension });
+      else resLinks.push({ term: tag, weight: e.resonance });
     }
     resLinks.sort((a, b) => b.weight - a.weight);
     tenLinks.sort((a, b) => b.weight - a.weight);

@@ -4,7 +4,7 @@
 // - Mosaic Mode: true edge-to-edge Olivier Auber square spiral mosaic with chromatic resonance fields
 //   and glowing/fractured shared neighbor membranes
 
-import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=4";
+import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=5";
 
 const STANCE_META = {
   assert: { glyph: "●", color: "#7dd3fc" },
@@ -221,7 +221,9 @@ export class NoeticRenderer {
     const sources = cells.map((c) => {
       const hue = c.hue != null ? c.hue : 200;
       const [r, g, b] = hslToRgb(hue, 0.78, 0.56);
-      const weight = (c.intensity || 1.0) * (c.isLocal ? 1.35 : c.isHuman ? 1.15 : 0.88);
+      const weight =
+        (c.intensity || 1.0) * (c.isLocal ? 1.35 : c.isHuman ? 1.15 : 0.85) +
+        (c.llmGravity || 0) * 0.65;
       return { x: c.x, y: c.y, r, g, b, weight };
     });
 
@@ -472,8 +474,8 @@ export class NoeticRenderer {
         this.selectedId === a.id ||
         this.selectedId === b.id;
 
-      // Only draw tension ridges globally, or resonance arcs attached to focus/human cells
-      if (e.type !== "tension" && !involvesFocus && e.type !== "bridge") continue;
+      // Always render LLM-forged links prominently, plus tension ridges and focus/bridge links
+      if (!e.isLlmLink && e.type !== "tension" && !involvesFocus && e.type !== "bridge") continue;
 
       ctx.save();
       const midX = (a.x + b.x) / 2;
@@ -481,25 +483,52 @@ export class NoeticRenderer {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const ctrlX = midX - (dy / dist) * Math.min(20, dist * 0.08);
-      const ctrlY = midY + (dx / dist) * Math.min(20, dist * 0.08);
+      const ctrlX = midX - (dy / dist) * Math.min(24, dist * 0.10);
+      const ctrlY = midY + (dx / dist) * Math.min(24, dist * 0.10);
 
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.quadraticCurveTo(ctrlX, ctrlY, b.x, b.y);
 
-      if (e.type === "tension") {
+      if (e.isLlmLink) {
+        if (e.type === "tension") {
+          ctx.strokeStyle = `rgba(251, 113, 133, ${0.72 * terrainAlpha})`;
+          ctx.lineWidth = 1.85;
+          ctx.setLineDash([5, 4]);
+        } else {
+          ctx.strokeStyle = `rgba(253, 230, 138, ${0.62 * terrainAlpha})`;
+          ctx.lineWidth = 1.75;
+        }
+        ctx.shadowColor = e.type === "tension" ? "#fb7185" : "#fde68a";
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+
+        // Draw LLM relational whisper at the curve midpoint when present
+        if (e.llmReason && terrainAlpha > 0.55) {
+          const lx = (a.x + 2 * ctrlX + b.x) / 4;
+          const ly = (a.y + 2 * ctrlY + b.y) / 4;
+          ctx.font = '400 9.5px "JetBrains Mono", monospace';
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = e.type === "tension" ? "rgba(254, 205, 211, 0.88)" : "rgba(254, 243, 199, 0.88)";
+          ctx.fillText(`◈ ${e.llmReason}`, lx, ly - 6);
+        }
+      } else if (e.type === "tension") {
         ctx.strokeStyle = `rgba(251, 113, 133, ${(0.18 + e.tension * 0.34) * terrainAlpha})`;
         ctx.lineWidth = involvesFocus ? 1.4 : 0.9;
         ctx.setLineDash([3, 5]);
+        ctx.stroke();
       } else if (e.type === "bridge") {
         ctx.strokeStyle = `rgba(52, 211, 153, ${(0.18 + e.resonance * 0.32) * terrainAlpha})`;
         ctx.lineWidth = 1.1;
+        ctx.stroke();
       } else {
         ctx.strokeStyle = `rgba(186, 230, 253, ${(0.22 + e.resonance * 0.36) * terrainAlpha})`;
         ctx.lineWidth = 1.1;
+        ctx.stroke();
       }
-      ctx.stroke();
       ctx.restore();
     }
   }
@@ -751,18 +780,21 @@ export class NoeticRenderer {
         const clipped = c.term.length > 14 ? `${c.term.slice(0, 13)}…` : c.term;
         ctx.fillText(clipped, c.x, c.y + 6);
       } else {
-        // Floating typographic concept directly on the potential terrain
+        // Floating typographic concept directly on the potential terrain (scales gently with LLM gravity!)
+        const gravBoost = (c.llmGravity || 0) > 0.25;
         ctx.font = c.isLocal
-          ? '600 13.5px "Space Grotesk", sans-serif'
-          : c.isHuman
-          ? '600 12.5px "Space Grotesk", sans-serif'
+          ? '600 14px "Space Grotesk", sans-serif'
+          : c.isHuman || gravBoost
+          ? '600 13px "Space Grotesk", sans-serif'
           : '400 11.5px "Inter", sans-serif';
         ctx.textAlign = "center";
         ctx.fillStyle = c.isLocal
           ? "#ffffff"
+          : gravBoost
+          ? "#fef3c7"
           : c.isHuman
           ? "#f1f5f9"
-          : "rgba(226, 232, 240, 0.86)";
+          : "rgba(226, 232, 240, 0.84)";
         const prefix = c.stance !== "assert" ? `${stanceInfo.glyph} ` : "";
         ctx.fillText(`${prefix}${c.term}`, c.x, c.y + 5);
       }

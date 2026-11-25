@@ -51,7 +51,7 @@ html, body {
 }
 
 body.mode-palimpsest #noetic-canvas {
-  opacity: 0.48;
+  opacity: 0.58;
 }
 
 #noetic-canvas:active {
@@ -296,6 +296,49 @@ body.mode-palimpsest #noetic-canvas {
 @keyframes gestationPulse {
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
+}
+
+.pal-links-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.llm-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: #fef3c7;
+  background: rgba(251, 191, 36, 0.09);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  cursor: default;
+  transition: all 0.2s ease;
+}
+
+.llm-link-pill.tension {
+  color: #fecdd3;
+  background: rgba(251, 113, 133, 0.10);
+  border-color: rgba(251, 113, 133, 0.34);
+}
+
+.llm-link-pill:hover {
+  background: rgba(251, 191, 36, 0.20);
+  border-color: rgba(253, 230, 138, 0.65);
+}
+
+.llm-link-pill.tension:hover {
+  background: rgba(251, 113, 133, 0.22);
+  border-color: rgba(253, 164, 175, 0.72);
+}
+
+.llm-link-reason {
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 /* Honest Pre-LLM Awakening Stage */

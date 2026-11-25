@@ -1,7 +1,7 @@
 // Layer 2 (v2): Live 2D PCA Semantic Compass, Continuous Potential-Guided Physics,
 // Edge-to-Edge Auber Spiral Mosaic, Conviction Weighting, Ghost Preview & Telemetry
 
-import { AXIS_COUNT } from "./semanticEngine.js?v=4";
+import { AXIS_COUNT } from "./semanticEngine.js?v=5";
 
 /**
  * Exact Ulam / Olivier Auber square spiral coordinates (index 0 at center).
@@ -49,6 +49,7 @@ export class TopologyEngine {
     this.edges = [];
     this.clusters = [];
     this.ripples = [];
+    this.llmLinks = new Map(); // normalized "termA|termB" -> { termA, termB, type, reason, weight, bornAt }
     this.topologyMode = "manifold"; // "manifold" | "spiral"
     this.topologyBlend = 0; // 0 = continuous terrain manifold, 1 = touching Auber spiral mosaic
 
@@ -147,6 +148,7 @@ export class TopologyEngine {
       x: Math.cos(angle) * r * 260,
       y: Math.sin(angle) * r * 190,
       clusterId: -1,
+      llmGravity: 0,
       lastLeverage: 0,
       updatedAt: now,
     };
@@ -344,6 +346,55 @@ export class TopologyEngine {
     };
   }
 
+  /**
+   * Integrates LLM-discovered conceptual links directly into the living topology & word-cloud gravity.
+   * Older LLM links gently fade after ~50 seconds so the map stays fluid and responsive.
+   */
+  applyLlmLinks(links, lang = "fr") {
+    const now = performance.now();
+
+    // Gently age out stale LLM links (> 50s)
+    for (const [k, entry] of this.llmLinks.entries()) {
+      if (now - entry.bornAt > 50000) {
+        this.llmLinks.delete(k);
+      } else {
+        entry.weight = Math.max(0.45, entry.weight * 0.85);
+      }
+    }
+
+    // Decay existing cell LLM gravity before boosting newly woven words
+    for (const c of this.cells.values()) {
+      c.llmGravity = (c.llmGravity || 0) * 0.55;
+    }
+
+    for (const link of links || []) {
+      if (!link.termA || !link.termB) continue;
+      const aLow = link.termA.toLowerCase();
+      const bLow = link.termB.toLowerCase();
+      if (aLow === bLow) continue;
+      const pairKey = aLow < bLow ? `${aLow}|${bLow}` : `${bLow}|${aLow}`;
+      this.llmLinks.set(pairKey, {
+        termA: link.termA,
+        termB: link.termB,
+        type: link.type === "tension" ? "tension" : "resonance",
+        reason: link.reason || "",
+        weight: link.weight || 0.88,
+        source: link.source || "llm",
+        bornAt: now,
+      });
+
+      // Boost luminous presence & topographic gravity of every word woven by the LLM
+      for (const c of this.cells.values()) {
+        const cLow = c.term.toLowerCase();
+        if (cLow === aLow || cLow === bLow) {
+          c.llmGravity = Math.min(1, (c.llmGravity || 0) + 0.45);
+        }
+      }
+    }
+
+    this.recomputeGraph(null, lang);
+  }
+
   recomputeGraph(perturbedCellId = null, lang = "fr") {
     const list = Array.from(this.cells.values());
     const n = list.length;
@@ -374,29 +425,57 @@ export class TopologyEngine {
         const a = list[i];
         const b = list[j];
         const rel = this.semantic.computeRelation(a, b);
+
+        // Check whether the LLM explicitly forged a living conceptual link between these two words!
+        const aLow = a.term.toLowerCase();
+        const bLow = b.term.toLowerCase();
+        const pairKey = aLow < bLow ? `${aLow}|${bLow}` : `${bLow}|${aLow}`;
+        const llmLink = this.llmLinks.get(pairKey);
+
+        let resonance = rel.resonance;
+        let tension = rel.tension;
+        let edgeType = rel.type;
+        let isLlmLink = false;
+        let llmReason = "";
+
+        if (llmLink) {
+          isLlmLink = true;
+          llmReason = llmLink.reason || "";
+          if (llmLink.type === "tension") {
+            tension = Math.max(tension, llmLink.weight);
+            resonance *= 0.3;
+            edgeType = "tension";
+          } else {
+            resonance = Math.max(resonance, llmLink.weight);
+            edgeType = "resonance";
+          }
+        }
+
         totalPairs++;
-        resonanceSum += rel.resonance;
-        resonanceSqSum += rel.resonance * rel.resonance;
+        resonanceSum += resonance;
+        resonanceSqSum += resonance * resonance;
 
         const manhattan = Math.abs(a.gx - b.gx) + Math.abs(a.gy - b.gy);
         const isSpiralNeighbor = manhattan === 1;
 
-        if (rel.type !== "neutral" || (isSpiralNeighbor && (rel.resonance > 0.2 || rel.tension > 0.25))) {
+        if (isLlmLink || edgeType !== "neutral" || (isSpiralNeighbor && (resonance > 0.2 || tension > 0.25))) {
           const edge = {
             a: a.id,
             b: b.id,
-            resonance: rel.resonance,
-            tension: rel.tension,
-            type: rel.type === "neutral" ? (rel.tension > rel.resonance ? "tension" : "resonance") : rel.type,
+            resonance: Number(resonance.toFixed(3)),
+            tension: Number(tension.toFixed(3)),
+            type: edgeType === "neutral" ? (tension > resonance ? "tension" : "resonance") : edgeType,
             isSpiralNeighbor,
+            isLlmLink,
+            llmReason,
           };
           newEdges.push(edge);
           const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
           newEdgeSig.set(key, `${edge.type}:${Math.round((edge.resonance + edge.tension) * 10)}`);
 
-          if (rel.type !== "neutral") {
+          if (edgeType !== "neutral" || isLlmLink) {
             activeEdges++;
-            if (rel.type === "tension") tensionEdges++;
+            if (edge.type === "tension") tensionEdges++;
           }
           if ((edge.type === "resonance" || edge.type === "bridge") && edge.resonance >= 0.40) {
             adj.get(a.id).push({ id: b.id, weight: edge.resonance });
@@ -407,12 +486,15 @@ export class TopologyEngine {
     }
 
     const edgeCounts = new Map();
-    newEdges.sort((e1, e2) => (e2.resonance + e2.tension) - (e1.resonance + e1.tension));
+    newEdges.sort((e1, e2) => {
+      if (e1.isLlmLink !== e2.isLlmLink) return e1.isLlmLink ? -1 : 1;
+      return (e2.resonance + e2.tension) - (e1.resonance + e1.tension);
+    });
     const prunedEdges = [];
     for (const e of newEdges) {
       const ca = edgeCounts.get(e.a) || 0;
       const cb = edgeCounts.get(e.b) || 0;
-      if (e.isSpiralNeighbor || (ca < 4 && cb < 4) || e.type === "tension") {
+      if (e.isLlmLink || e.isSpiralNeighbor || (ca < 4 && cb < 4) || e.type === "tension") {
         prunedEdges.push(e);
         edgeCounts.set(e.a, ca + 1);
         edgeCounts.set(e.b, cb + 1);
@@ -644,9 +726,10 @@ export class TopologyEngine {
     const n = list.length;
     if (n === 0) return;
 
-    // 1. Pull cells gently toward their live 2D PCA compass coordinates (meaningful space!)
+    // 1. Pull cells gently toward live 2D PCA compass coordinates
+    //    (relaxed slightly when the LLM is actively sculpting the cell's position!)
     for (const c of list) {
-      const pull = 1.9;
+      const pull = c.llmGravity > 0.2 ? 0.95 : 1.85;
       c.vx += (c.targetX - c.mx) * pull * dt;
       c.vy += (c.targetY - c.my) * pull * dt;
     }
@@ -689,8 +772,8 @@ export class TopologyEngine {
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
       if (e.type === "resonance" || e.type === "bridge") {
-        const targetDist = e.type === "bridge" ? 135 : Math.max(76, 150 - e.resonance * 82);
-        const k = e.type === "bridge" ? 1.1 : 1.75 * e.resonance;
+        const targetDist = e.isLlmLink ? 96 : e.type === "bridge" ? 135 : Math.max(76, 150 - e.resonance * 82);
+        const k = (e.isLlmLink ? 3.2 : e.type === "bridge" ? 1.1 : 1.75) * e.resonance;
         const force = (dist - targetDist) * k;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -699,8 +782,8 @@ export class TopologyEngine {
         b.vx -= fx * dt;
         b.vy -= fy * dt;
       } else if (e.type === "tension") {
-        const targetDist = 230 + e.tension * 70;
-        const force = (dist - targetDist) * 1.1;
+        const targetDist = (e.isLlmLink ? 250 : 230) + e.tension * 70;
+        const force = (dist - targetDist) * (e.isLlmLink ? 1.75 : 1.1);
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.vx += fx * dt;
