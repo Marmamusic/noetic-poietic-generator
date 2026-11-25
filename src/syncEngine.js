@@ -45,6 +45,7 @@ export class SyncEngine {
         id: cell.id,
         term: cell.term,
         stance: cell.stance,
+        intensity: cell.intensity || 1.0,
       },
     });
   }

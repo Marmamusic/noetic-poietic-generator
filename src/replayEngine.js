@@ -1,5 +1,5 @@
-// Append-only Morphogenesis Recorder & Temporal Scrubber
-// Preserves full evolutionary trace of collective thought for playback & research export.
+// Append-only Morphogenesis Recorder & Temporal Scrubber (v2)
+// Captures cells (with chromatic hues & conviction), edges, basins, axes, voids, PCA compass, and emergent Noème.
 
 export class ReplayEngine {
   constructor(maxFrames = 400) {
@@ -17,10 +17,14 @@ export class ReplayEngine {
       id: c.id,
       term: c.term,
       stance: c.stance,
+      intensity: c.intensity || 1.0,
+      hue: c.hue != null ? c.hue : 200,
       isHuman: c.isHuman,
       isLocal: c.isLocal,
       x: Math.round(c.x * 10) / 10,
       y: Math.round(c.y * 10) / 10,
+      gx: c.gx,
+      gy: c.gy,
       spiralIndex: c.spiralIndex,
       clusterId: c.clusterId,
       lastLeverage: c.lastLeverage || 0,
@@ -29,12 +33,15 @@ export class ReplayEngine {
     const frame = {
       t: Date.now() - this.startedAt,
       event: eventNote,
+      noeme: mirror.noeme,
+      compass: { ...topology.compass },
       telemetry: { ...topology.telemetry },
       cells,
       edges: topology.edges.map((e) => ({ ...e })),
       basins: mirror.basins.map((b) => ({
         id: b.id,
         label: b.label,
+        hue: b.hue,
         cx: b.cx,
         cy: b.cy,
         radius: b.radius,
@@ -68,7 +75,7 @@ export class ReplayEngine {
 
   exportJSON() {
     const payload = {
-      instrument: "Noetic Poietic Generator",
+      instrument: "Noetic Poietic Generator v2",
       exportedAt: new Date().toISOString(),
       frameCount: this.frames.length,
       frames: this.frames,

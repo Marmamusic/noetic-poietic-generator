@@ -1,16 +1,21 @@
-// Layer 3: The Overhead Meta-Noetic Mirror ("le miroir placé au-dessus des humains")
-// - Always-on deterministic geometric mirror: emergent basins, dialectical tension axes, negative-space voids
-// - Optional BYOK LLM observer: non-servile, zero 1-to-1 chat, strict JSON, hysteresis-gated
+// Layer 3 (v2): The Overhead Meta-Noetic Mirror ("le miroir placé au-dessus des humains")
+// - Projects an emergent collective Noème (conceptual figure / tension refraction), not repetitive cluster tags
+// - Records live Before → After transductive diffs whenever the human alters a concept
+// - Optional BYOK non-servile LLM observer (strict JSON only, zero 1-to-1 chat)
 
 export class MirrorEngine {
   constructor(topologyEngine) {
     this.topology = topologyEngine;
     this.visible = true;
 
-    // Projected overhead artifacts (all carry mathematical provenance for anoptical inspection)
     this.basins = [];
     this.axes = [];
     this.voids = [];
+
+    // Living overhead Noème (meta-noetic collective refraction)
+    this.noeme = "";
+    this.noemeSub = "";
+    this.lastDiff = null; // { prevNoeme, nextNoeme, triggerTerm, leverage, bornAt }
 
     // Optional BYOK LLM mirror state
     this.llmEnabled = false;
@@ -19,8 +24,9 @@ export class MirrorEngine {
       model: "gpt-4o-mini",
       apiKey: "",
     };
-    this.llmLabels = new Map(); // clusterSignature -> { name, updatedAt }
-    this.llmAxisLabels = new Map(); // axisKey -> label
+    this.llmNoeme = null;
+    this.llmLabels = new Map();
+    this.llmAxisLabels = new Map();
     this.llmVoidNote = null;
     this.lastLlmCallAt = 0;
     this.llmPending = false;
@@ -28,14 +34,16 @@ export class MirrorEngine {
   }
 
   /**
-   * Deterministic geometric mirror projection (runs locally, zero latency, zero API key).
+   * Deterministic geometric + conceptual-regime mirror projection (zero API key required).
    */
   update(lang = "fr") {
     const clusters = this.topology.clusters;
     const cells = this.topology.cells;
     const edges = this.topology.edges;
+    const semantic = this.topology.semantic;
+    const compass = this.topology.compass;
 
-    // 1. Emergent Basins (translucent overhead halos with medoid + secondary term)
+    // 1. Emergent Basins named by their conceptual regime (axis orientation), NOT echoing member words!
     const nextBasins = [];
     for (const cl of clusters) {
       const signature = cl.members
@@ -44,22 +52,9 @@ export class MirrorEngine {
         .slice(0, 5)
         .join("|");
 
-      // Pick a distinct secondary term to capture basin nuance rather than flat single-word collapse
-      const distinctTerms = [];
-      for (const m of cl.members) {
-        const low = m.term.toLowerCase();
-        if (!distinctTerms.some((t) => t.toLowerCase() === low)) {
-          distinctTerms.push(m.term);
-        }
-        if (distinctTerms.length >= 2) break;
-      }
-
+      const regime = semantic.describeDirection(cl.centroidAxis, lang);
       const llmOverride = this.llmEnabled ? this.llmLabels.get(signature) : null;
-      const label = llmOverride
-        ? llmOverride.name
-        : distinctTerms.length > 1
-        ? `${distinctTerms[0]} · ${distinctTerms[1]}`
-        : distinctTerms[0] || "—";
+      const label = llmOverride ? llmOverride.name : regime.pos;
 
       nextBasins.push({
         kind: "basin",
@@ -67,6 +62,8 @@ export class MirrorEngine {
         clusterId: cl.id,
         signature,
         label,
+        regimePrimary: regime.primaryPos,
+        hue: cl.hue || 200,
         isLlmNamed: Boolean(llmOverride),
         cx: cl.cx,
         cy: cl.cy,
@@ -78,12 +75,12 @@ export class MirrorEngine {
     }
     this.basins = nextBasins;
 
-    // 2. Dialectical Tension Axes (never synthesized—preserved as sharp unresolved polarities)
+    // 2. Dialectical Tension Axes (preserved as sharp unresolved polarities)
     const basinPairTension = new Map();
     const standaloneTensions = [];
 
     for (const e of edges) {
-      if (e.type !== "tension" || e.tension < 0.48) continue;
+      if (e.type !== "tension" || e.tension < 0.46) continue;
       const a = cells.get(e.a);
       const b = cells.get(e.b);
       if (!a || !b) continue;
@@ -111,7 +108,7 @@ export class MirrorEngine {
       if (!bA || !bB) continue;
 
       const strength = Math.min(1, entry.sum / entry.count);
-      const defaultLabel = `${bA.members[0]?.term || bA.label} ↔ ${bB.members[0]?.term || bB.label}`;
+      const defaultLabel = `${bA.regimePrimary} ↔ ${bB.regimePrimary}`;
       const llmLbl = this.llmEnabled ? this.llmAxisLabels.get(key) : null;
 
       nextAxes.push({
@@ -131,7 +128,6 @@ export class MirrorEngine {
       });
     }
 
-    // If no inter-basin tension axis exists, elevate up to 2 strongest cell-to-cell dialectical fault lines
     if (nextAxes.length === 0 && standaloneTensions.length > 0) {
       standaloneTensions.sort((p, q) => q.tension - p.tension);
       for (const st of standaloneTensions.slice(0, 2)) {
@@ -153,9 +149,9 @@ export class MirrorEngine {
         });
       }
     }
-    this.axes = nextAxes.slice(0, 4);
+    this.axes = nextAxes.slice(0, 3);
 
-    // 3. Negative Space / Anoptical Vanishing Point (unoccupied structural gap between two basins)
+    // 3. Negative Space / Vanishing Point (unthought bridge between basins)
     const nextVoids = [];
     if (nextBasins.length >= 2) {
       let bestGap = null;
@@ -168,14 +164,13 @@ export class MirrorEngine {
           const dist = Math.hypot(bB.cx - bA.cx, bB.cy - bA.cy);
           if (dist < 150) continue;
 
-          // Measure clearance: nearest cell to the midpoint
           let minCellDist = Infinity;
           for (const c of cells.values()) {
             const d = Math.hypot(c.x - mx, c.y - my);
             if (d < minCellDist) minCellDist = d;
           }
 
-          if (minCellDist > 72 && (!bestGap || minCellDist > bestGap.clearance)) {
+          if (minCellDist > 68 && (!bestGap || minCellDist > bestGap.clearance)) {
             bestGap = {
               kind: "void",
               id: `void-${bA.clusterId}-${bB.clusterId}`,
@@ -192,7 +187,10 @@ export class MirrorEngine {
     }
     this.voids = nextVoids;
 
-    // 4. Trigger hysteresis-gated LLM mirror if enabled and field shifted meaningfully
+    // 4. Synthesize the Living Overhead Collective Noème (Gestalt refraction above the whole field)
+    this.synthesizeNoeme(lang, compass);
+
+    // 5. Hysteresis-gated optional LLM observer
     if (
       this.llmEnabled &&
       !this.llmPending &&
@@ -203,10 +201,59 @@ export class MirrorEngine {
     }
   }
 
+  synthesizeNoeme(lang, compass) {
+    if (this.llmEnabled && this.llmNoeme) {
+      this.noeme = this.llmNoeme;
+      this.noemeSub = `${compass.axis1Label}  |  ${compass.axis2Label}`;
+      return;
+    }
+
+    const { phase } = this.topology.telemetry;
+    const globalMeanDir = this.topology.semantic.describeDirection(this.topology.meanAxis, lang);
+    const topBasin = this.basins[0]?.regimePrimary || globalMeanDir.primaryPos;
+    const secondBasin = this.basins[1]?.regimePrimary || globalMeanDir.primaryNeg;
+    const topAxis = this.axes[0]?.label || compass.axis1Label;
+
+    if (lang === "fr") {
+      if (phase === "polarized") {
+        this.noeme = `Fracture dialectique : ${topAxis} en tension vive`;
+      } else if (phase === "crystallizing") {
+        this.noeme = `Cristallisation d’un horizon de ${topBasin} — contrepoint ${secondBasin}`;
+      } else if (phase === "diffuse") {
+        this.noeme = `Milieu pré-individuel ouvert : gestation entre ${compass.axis1Label}`;
+      } else {
+        this.noeme = `Champ métastable : ${topBasin} traversé par ${topAxis}`;
+      }
+      this.noemeSub = `Axes émergents : ${compass.axis1Label}  ·  ${compass.axis2Label}`;
+    } else {
+      if (phase === "polarized") {
+        this.noeme = `Dialectical fault line: ${topAxis} in active tension`;
+      } else if (phase === "crystallizing") {
+        this.noeme = `Crystallizing horizon of ${topBasin} — counterpointed by ${secondBasin}`;
+      } else if (phase === "diffuse") {
+        this.noeme = `Open pre-individual field: gestation across ${compass.axis1Label}`;
+      } else {
+        this.noeme = `Metastable horizon: ${topBasin} traversed by ${topAxis}`;
+      }
+      this.noemeSub = `Emergent axes: ${compass.axis1Label}  ·  ${compass.axis2Label}`;
+    }
+  }
+
   /**
-   * Optional non-servile overhead LLM reflection.
-   * Never addresses an individual; returns strictly structured spatial refractions.
+   * Captures a live Before → After transductive inflection right when the human mutates their cell.
    */
+  recordHumanInflection(prevNoeme, triggerTerm, leverage) {
+    const nextNoeme = this.noeme;
+    this.lastDiff = {
+      prevNoeme: prevNoeme || nextNoeme,
+      nextNoeme,
+      changed: prevNoeme && prevNoeme !== nextNoeme,
+      triggerTerm,
+      leverage,
+      bornAt: performance.now(),
+    };
+  }
+
   async reflectWithLLM(lang = "fr") {
     if (this.llmPending) return;
     const endpoint = (this.llmConfig.endpoint || "").trim();
@@ -226,6 +273,7 @@ export class MirrorEngine {
     const snapshot = {
       language: lang,
       phase: this.topology.telemetry.phase,
+      compass: this.topology.compass,
       basins: this.basins.map((b) => ({
         signature: b.signature,
         terms: b.members.map((m) => `${m.term} (${m.stance})`),
@@ -242,11 +290,12 @@ export class MirrorEngine {
       "You are NOT an assistant, chatbot, or summarizer.",
       "You are an overhead anoptical mirror observing a collective noetic field inspired by Olivier Auber's Poietic Generator and Gilbert Simondon's transindividuation.",
       "Rules:",
-      "- Never address individuals, never give advice, never smooth over contradictions into bland consensus.",
+      "- Never address individuals, never give advice, never resolve contradictions into consensus.",
       "- Preserve metastability and dialectical tension.",
+      "- Synthesize a single concise emergent collective 'noeme' (8-14 words max) capturing the living Gestalt and tension of the whole field.",
       `- Output in ${lang === "fr" ? "French" : "English"}.`,
       "- Respond ONLY with valid JSON matching:",
-      '  {"basins":[{"signature":"...","name":"2-3 word emergent concept"}],"axes":[{"key":"...","label":"Pole A ↔ Pole B"}],"blind_spot":"2-3 word unthought gap or question"}',
+      '  {"noeme":"concise emergent collective thought-form","basins":[{"signature":"...","name":"2-3 word conceptual regime"}],"axes":[{"key":"...","label":"Pole A ↔ Pole B"}],"blind_spot":"2-3 word unthought gap"}',
     ].join("\n");
 
     try {
@@ -260,8 +309,8 @@ export class MirrorEngine {
         headers,
         body: JSON.stringify({
           model: this.llmConfig.model || "gpt-4o-mini",
-          temperature: 0.45,
-          max_tokens: 260,
+          temperature: 0.5,
+          max_tokens: 300,
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: systemPrompt },
@@ -270,13 +319,14 @@ export class MirrorEngine {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const raw = data.choices?.[0]?.message?.content || "";
       const parsed = JSON.parse(raw);
 
+      if (typeof parsed.noeme === "string" && parsed.noeme.trim()) {
+        this.llmNoeme = parsed.noeme.trim().slice(0, 110);
+      }
       if (Array.isArray(parsed.basins)) {
         for (const item of parsed.basins) {
           if (item.signature && item.name) {
@@ -304,9 +354,7 @@ export class MirrorEngine {
       }
     } catch (err) {
       console.warn("LLM mirror reflection failed:", err);
-      if (this.onLlmStatus) {
-        this.onLlmStatus(`Mirror fallback (${err.message})`);
-      }
+      if (this.onLlmStatus) this.onLlmStatus(`Mirror fallback (${err.message})`);
     } finally {
       this.llmPending = false;
     }

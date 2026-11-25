@@ -1,4 +1,4 @@
-// Main Orchestrator for the Noetic Poietic Generator
+// Main Orchestrator for the Noetic Poietic Generator (v2)
 
 import { TRANSLATIONS } from "./i18n.js";
 import { SemanticEngine } from "./semanticEngine.js";
@@ -24,7 +24,9 @@ const renderer = new NoeticRenderer(canvas);
 // App state
 let currentLang = "fr";
 let currentStance = "assert";
+let currentIntensity = 1.0;
 let selectedArtifact = null; // { kind, id }
+let ghostPreview = null;
 let lastFrameTime = performance.now();
 let lastMirrorUpdate = 0;
 let lastReplayCapture = 0;
@@ -38,11 +40,15 @@ const el = {
   valTension: document.getElementById("val-tension"),
   valSimplicity: document.getElementById("val-simplicity"),
   valCells: document.getElementById("val-cells"),
+  noemeMirror: document.getElementById("noeme-mirror"),
+  noemeText: document.getElementById("noeme-text"),
+  noemeDiff: document.getElementById("noeme-diff"),
   inputConcept: document.getElementById("input-concept"),
   tokenCounter: document.getElementById("token-counter"),
   leverageReadout: document.getElementById("leverage-readout"),
   cellForm: document.getElementById("cell-form"),
   stanceBtns: Array.from(document.querySelectorAll(".stance-btn")),
+  intensityBtns: Array.from(document.querySelectorAll(".int-btn")),
   btnTopoManifold: document.getElementById("btn-topo-manifold"),
   btnTopoSpiral: document.getElementById("btn-topo-spiral"),
   btnToggleMirror: document.getElementById("btn-toggle-mirror"),
@@ -97,7 +103,6 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.toast.classList.add("hidden"), 3200);
 }
 
-// Language / i18n helper
 function t() {
   return TRANSLATIONS[currentLang] || TRANSLATIONS.fr;
 }
@@ -114,7 +119,10 @@ function applyTranslations() {
   el.btnLang.textContent = currentLang.toUpperCase();
   el.btnSwarmPause.textContent = swarm.paused ? dict.resume : dict.pause;
   el.btnLlmToggle.textContent = mirror.llmEnabled ? dict.llmDisable : dict.llmEnable;
+  topology.refreshCompassLabels(currentLang);
+  mirror.update(currentLang);
   updateNeuralButtonUI();
+  updateNoemeUI();
   updateTelemetryUI(topology.telemetry);
   if (selectedArtifact) renderInspector();
 }
@@ -135,6 +143,24 @@ function updateNeuralButtonUI(progress = 0) {
   }
 }
 
+function updateNoemeUI(overrideText = null) {
+  el.noemeMirror.classList.toggle("muted", !mirror.visible);
+  el.noemeText.textContent = overrideText || mirror.noeme || "—";
+
+  const diff = mirror.lastDiff;
+  if (!overrideText && diff && performance.now() - diff.bornAt < 7500) {
+    const prefix = t().diffPrefix;
+    if (diff.changed) {
+      el.noemeDiff.innerHTML = `${prefix} (« ${escapeHtml(diff.triggerTerm)} » · ΔM ${diff.leverage.toFixed(2)}) : <span class="diff-old">${escapeHtml(diff.prevNoeme)}</span> → ${escapeHtml(diff.nextNoeme)}`;
+    } else {
+      el.noemeDiff.textContent = `${prefix} (« ${diff.triggerTerm} » · ΔM ${diff.leverage.toFixed(2)}) — ${mirror.noemeSub}`;
+    }
+    el.noemeDiff.classList.remove("hidden");
+  } else {
+    el.noemeDiff.classList.add("hidden");
+  }
+}
+
 // Multiplayer SyncEngine
 const sync = new SyncEngine(localId, {
   getLocalCell: () => topology.cells.get(localId),
@@ -143,6 +169,7 @@ const sync = new SyncEngine(localId, {
       id: cell.id,
       term: cell.term,
       stance: cell.stance || "assert",
+      intensity: cell.intensity || 1.0,
       isHuman: true,
       isLocal: false,
     });
@@ -150,11 +177,13 @@ const sync = new SyncEngine(localId, {
       topology.refreshEmbeddingsAsync();
     }
     mirror.update(currentLang);
+    updateNoemeUI();
     replay.capture(topology, mirror, `remote:${cell.term}`);
   },
   onRemoteLeave: (id) => {
     topology.removeCell(id);
     mirror.update(currentLang);
+    updateNoemeUI();
   },
   onStatus: (statusText, activeRoom) => {
     el.roomStatus.textContent = statusText;
@@ -172,48 +201,62 @@ const sync = new SyncEngine(localId, {
   },
 });
 
-// Enforces strict 1–3 word conceptual budget (psychic ergonomics against rhetorical dominance)
 function sanitizeConcept(raw) {
   const words = (raw || "").trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
   return words.slice(0, 3).join(" ").slice(0, 34);
 }
 
-function updateTokenCounter() {
-  const words = el.inputConcept.value.trim().split(/\s+/).filter(Boolean);
+function updateTokenCounterAndGhost() {
+  const raw = el.inputConcept.value;
+  const words = raw.trim().split(/\s+/).filter(Boolean);
   el.tokenCounter.textContent = `${words.length}/3`;
   el.tokenCounter.classList.toggle("over", words.length > 3);
+
+  // Live Ghost Preview before pressing Enter!
+  const draft = sanitizeConcept(raw);
+  ghostPreview = draft ? topology.computeGhostPreview(localId, draft, currentStance) : null;
 }
 
-async function commitLocalGesture(rawTerm, stance = currentStance) {
+async function commitLocalGesture(rawTerm, stance = currentStance, intensity = currentIntensity) {
   const term = sanitizeConcept(rawTerm);
   if (!term) return;
   el.inputConcept.value = term;
-  updateTokenCounter();
+  ghostPreview = null;
+  const words = term.split(" ").filter(Boolean);
+  el.tokenCounter.textContent = `${words.length}/3`;
+  el.tokenCounter.classList.remove("over");
 
-  // Exit replay scrub mode if user acts
   if (replay.isScrubbing) exitReplayScrub();
 
+  const prevNoeme = mirror.noeme;
   const leverage = topology.upsertCell({
     id: localId,
     term,
     stance,
+    intensity,
     isHuman: true,
     isLocal: true,
   });
 
+  // Notify swarm so agents perceptibly respond to the human's conceptual gesture
+  swarm.notifyHumanGesture(term);
+
   el.leverageReadout.textContent = `ΔM ${leverage.toFixed(2)}`;
-  sync.publishLocalCell({ id: localId, term, stance });
+  sync.publishLocalCell({ id: localId, term, stance, intensity });
 
   if (semantic.mode === "neural") {
     const emb = await semantic.embed(term);
     const cell = topology.cells.get(localId);
     if (cell) {
       cell.embedding = emb;
-      topology.recomputeGraph(localId);
+      topology.recomputeGraph(localId, currentLang);
     }
   }
 
+  topology.refreshCompassLabels(currentLang);
   mirror.update(currentLang);
+  mirror.recordHumanInflection(prevNoeme, term, leverage);
+  updateNoemeUI();
   replay.capture(topology, mirror, `you:${term} (${stance})`);
   syncReplaySlider();
   if (selectedArtifact) renderInspector();
@@ -224,11 +267,8 @@ const popovers = ["popover-swarm", "popover-room", "popover-llm"];
 function togglePopover(id) {
   for (const pid of popovers) {
     const node = document.getElementById(pid);
-    if (pid === id) {
-      node.classList.toggle("hidden");
-    } else {
-      node.classList.add("hidden");
-    }
+    if (pid === id) node.classList.toggle("hidden");
+    else node.classList.add("hidden");
   }
 }
 
@@ -242,10 +282,13 @@ document.querySelectorAll("[data-close]").forEach((btn) => {
 // UI Event Listeners
 el.cellForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  commitLocalGesture(el.inputConcept.value, currentStance);
+  commitLocalGesture(el.inputConcept.value, currentStance, currentIntensity);
 });
 
-el.inputConcept.addEventListener("input", updateTokenCounter);
+el.inputConcept.addEventListener("input", updateTokenCounterAndGhost);
+el.inputConcept.addEventListener("blur", () => {
+  ghostPreview = null;
+});
 
 el.stanceBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -253,7 +296,18 @@ el.stanceBtns.forEach((btn) => {
     el.stanceBtns.forEach((b) => b.classList.toggle("active", b === btn));
     const localCell = topology.cells.get(localId);
     if (localCell) {
-      commitLocalGesture(el.inputConcept.value || localCell.term, currentStance);
+      commitLocalGesture(el.inputConcept.value || localCell.term, currentStance, currentIntensity);
+    }
+  });
+});
+
+el.intensityBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    currentIntensity = Number(btn.getAttribute("data-intensity")) || 1.0;
+    el.intensityBtns.forEach((b) => b.classList.toggle("active", b === btn));
+    const localCell = topology.cells.get(localId);
+    if (localCell) {
+      commitLocalGesture(el.inputConcept.value || localCell.term, currentStance, currentIntensity);
     }
   });
 });
@@ -273,6 +327,7 @@ el.btnTopoSpiral.addEventListener("click", () => {
 el.btnToggleMirror.addEventListener("click", () => {
   mirror.visible = !mirror.visible;
   el.btnToggleMirror.classList.toggle("active", mirror.visible);
+  updateNoemeUI();
 });
 
 el.btnNeural.addEventListener("click", async () => {
@@ -282,6 +337,7 @@ el.btnNeural.addEventListener("click", async () => {
   if (ok) {
     await topology.refreshEmbeddingsAsync();
     mirror.update(currentLang);
+    updateNoemeUI();
     showToast(t().toasts.neuralReady);
   } else {
     showToast(t().toasts.neuralFailed);
@@ -297,6 +353,7 @@ el.sliderSwarm.addEventListener("input", () => {
   el.swarmCountBadge.textContent = String(val);
   swarm.setTargetCount(val);
   mirror.update(currentLang);
+  updateNoemeUI();
 });
 
 el.sliderTempo.addEventListener("input", () => {
@@ -313,7 +370,8 @@ el.btnSwarmPause.addEventListener("click", () => {
 el.btnSwarmPulse.addEventListener("click", () => {
   swarm.perturb(() => {});
   mirror.update(currentLang);
-  replay.capture(topology, mirror, "perturb");
+  updateNoemeUI();
+  replay.capture(topology, mirror, "bifurcation");
   syncReplaySlider();
   showToast(t().toasts.perturbed);
 });
@@ -370,6 +428,7 @@ if (savedSessionKey) el.inputLlmKey.value = savedSessionKey;
 
 mirror.onLlmStatus = (msg) => {
   el.llmStatus.textContent = msg;
+  updateNoemeUI();
 };
 
 el.btnLlmToggle.addEventListener("click", () => {
@@ -388,6 +447,9 @@ el.btnLlmToggle.addEventListener("click", () => {
   showToast(mirror.llmEnabled ? t().toasts.llmEnabled : t().toasts.llmDisabled);
   if (mirror.llmEnabled) {
     mirror.reflectWithLLM(currentLang);
+  } else {
+    mirror.update(currentLang);
+    updateNoemeUI();
   }
 });
 
@@ -405,7 +467,6 @@ el.btnLlmTrigger.addEventListener("click", () => {
 el.btnLang.addEventListener("click", () => {
   currentLang = currentLang === "fr" ? "en" : "fr";
   swarm.setLanguage(currentLang, true);
-  mirror.update(currentLang);
   applyTranslations();
 });
 
@@ -599,7 +660,6 @@ canvas.addEventListener("pointerup", (e) => {
   canvas.releasePointerCapture(e.pointerId);
 
   if (!dragMoved) {
-    // Close open popovers on canvas click
     for (const pid of popovers) document.getElementById(pid).classList.add("hidden");
 
     const hit = renderer.hitTest(e.clientX, e.clientY);
@@ -641,6 +701,7 @@ function exitReplayScrub() {
   replay.isScrubbing = false;
   el.replayLabel.textContent = "LIVE";
   el.replayLabel.classList.remove("scrubbing");
+  updateNoemeUI();
   syncReplaySlider();
 }
 
@@ -698,33 +759,28 @@ function updateTelemetryUI(tele) {
 
 // Initialization
 function init() {
-  applyTranslations();
-
-  // Seed user's initial cell (immediately editable!)
-  const initialConcept = currentLang === "fr" ? "transindividuation" : "transindividuation";
+  const initialConcept = "transindividuation";
   el.inputConcept.value = initialConcept;
-  updateTokenCounter();
 
   topology.upsertCell({
     id: localId,
     term: initialConcept,
     stance: "assert",
+    intensity: currentIntensity,
     isHuman: true,
     isLocal: true,
   });
 
-  // Seed synthetic swarm so the field is immediately alive
   swarm.setLanguage(currentLang, false);
   swarm.setTargetCount(16);
 
-  // Settle initial physics slightly for an immediate serene layout
-  for (let i = 0; i < 40; i++) topology.stepPhysics(0.025);
-  mirror.update(currentLang);
+  // Settle initial terrain smoothly
+  for (let i = 0; i < 45; i++) topology.stepPhysics(0.025);
+  applyTranslations();
+  el.tokenCounter.textContent = "1/3";
   replay.capture(topology, mirror, "init");
   syncReplaySlider();
-  updateTelemetryUI(topology.telemetry);
 
-  // Check URL ?room=CODE for direct P2P invite joins
   const params = new URLSearchParams(window.location.search);
   const roomParam = params.get("room");
   if (roomParam) {
@@ -743,6 +799,7 @@ function loop(now) {
     const frame = replay.getFrame(replay.scrubIndex);
     if (frame) {
       updateTelemetryUI(frame.telemetry);
+      updateNoemeUI(frame.noeme);
       renderer.render({
         cells: frame.cells,
         edges: frame.edges,
@@ -751,6 +808,8 @@ function loop(now) {
         voids: frame.voids,
         ripples: [],
         telemetry: frame.telemetry,
+        compass: frame.compass,
+        ghostPreview: null,
         topologyBlend: topology.topologyBlend,
         showMirror: mirror.visible,
         time: now,
@@ -766,7 +825,9 @@ function loop(now) {
     topology.stepPhysics(dt);
 
     if (now - lastMirrorUpdate > 360) {
+      topology.refreshCompassLabels(currentLang);
       mirror.update(currentLang);
+      updateNoemeUI();
       updateTelemetryUI(topology.telemetry);
       lastMirrorUpdate = now;
     }
@@ -785,6 +846,8 @@ function loop(now) {
       voids: mirror.voids,
       ripples: topology.ripples,
       telemetry: topology.telemetry,
+      compass: topology.compass,
+      ghostPreview,
       topologyBlend: topology.topologyBlend,
       showMirror: mirror.visible,
       time: now,

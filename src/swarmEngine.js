@@ -1,6 +1,6 @@
-// Synthetic Noetic Swarm (Auber–Dessalles calibration method)
-// Heterogeneous agents perceive the live collective field (including human cells)
-// and respond via distinct epistemic drives: Resonator, Dialectician, Bridger, Simplicity-Seeker, Bifurcator.
+// Synthetic Noetic Swarm (v2 — Collective Phase Waves: Convergence → Crystallization → Bifurcation)
+// Agents perceive human gestures directly and ride macro-waves so the terrain breathes organically
+// instead of exhibiting flat Brownian jitter.
 
 import { CONCEPT_POOLS, POLARITY_PAIRS, normalizeText } from "./i18n.js";
 
@@ -17,10 +17,26 @@ export class SwarmEngine {
     this.lang = "fr";
     this._accum = 0;
     this._cursor = 0;
+
+    // Collective wave dynamics
+    this.waveMode = "converging"; // "converging" | "crystallized" | "bifurcating"
+    this._waveTicks = 0;
+    this._humanEchoRemaining = 0;
+    this._lastHumanTerm = null;
   }
 
   getPool() {
     return CONCEPT_POOLS[this.lang] || CONCEPT_POOLS.fr;
+  }
+
+  /**
+   * Called whenever a human edits their cell: triggers a localized transductive response wave!
+   */
+  notifyHumanGesture(term) {
+    this._lastHumanTerm = term;
+    this._humanEchoRemaining = 5; // next 5 agent steps noticeably respond to the human's move
+    this.waveMode = "converging";
+    this._waveTicks = 0;
   }
 
   setLanguage(lang, reseed = false) {
@@ -47,7 +63,6 @@ export class SwarmEngine {
     this.targetCount = Math.max(0, Math.min(36, count));
     const pool = this.getPool();
 
-    // Add agents if needed
     while (this.agentIds.length < this.targetCount) {
       const n = this.agentIds.length + 1;
       const id = `agent-${n}-${Math.random().toString(36).slice(2, 5)}`;
@@ -71,25 +86,33 @@ export class SwarmEngine {
       });
     }
 
-    // Remove excess agents
     while (this.agentIds.length > this.targetCount) {
       const id = this.agentIds.pop();
       this.topology.removeCell(id);
     }
   }
 
-  /**
-   * Advances synthetic agents gently so the human can feel recursive collective morphogenesis.
-   */
   tick(dt, onAgentMove) {
     if (this.paused || this.agentIds.length === 0) return;
-    // Tempo 5 -> ~1 agent moves every 1.4s; Tempo 10 -> every 0.45s; Tempo 1 -> every 3.6s
-    const interval = Math.max(0.4, 4.0 - this.tempo * 0.36);
+    const interval = Math.max(0.38, 3.8 - this.tempo * 0.34);
     this._accum += dt;
     if (this._accum < interval) return;
     this._accum = 0;
 
-    // Pick next agent (with slight preference for agents near human cells so human edits echo!)
+    // Update macro collective wave state machine
+    this._waveTicks++;
+    const { entropy, tensionRatio } = this.topology.telemetry;
+    if (this.waveMode === "converging" && (entropy < 0.46 || this._waveTicks > 12)) {
+      this.waveMode = "crystallized";
+      this._waveTicks = 0;
+    } else if (this.waveMode === "crystallized" && this._waveTicks > 5) {
+      this.waveMode = "bifurcating";
+      this._waveTicks = 0;
+    } else if (this.waveMode === "bifurcating" && (tensionRatio > 0.28 || this._waveTicks > 6)) {
+      this.waveMode = "converging";
+      this._waveTicks = 0;
+    }
+
     const id = this.agentIds[this._cursor % this.agentIds.length];
     this._cursor++;
     const cell = this.topology.cells.get(id);
@@ -114,16 +137,21 @@ export class SwarmEngine {
   }
 
   /**
-   * Deliberately injects a dialectical perturbation across 3 agents to break stagnation.
+   * Triggers a deliberate collective bifurcation wave across opposing poles.
    */
   perturb(onAgentMove) {
+    this.waveMode = "bifurcating";
+    this._waveTicks = 0;
     const pool = this.getPool();
-    const sample = this.agentIds.slice(0, Math.min(4, this.agentIds.length));
-    for (const id of sample) {
+    const anchorTerm = this._lastHumanTerm || this.topology.clusters[0]?.medoidTerm || pool[0];
+    const counter = this.findCounterConcept(anchorTerm, pool) || pool[Math.floor(Math.random() * pool.length)];
+
+    const sample = this.agentIds.slice(0, Math.min(5, this.agentIds.length));
+    sample.forEach((id, idx) => {
       const cell = this.topology.cells.get(id);
-      if (!cell) continue;
-      const term = pool[Math.floor(Math.random() * pool.length)];
-      const stance = Math.random() < 0.5 ? "negate" : "question";
+      if (!cell) return;
+      const term = idx < 2 ? counter : pool[Math.floor(Math.random() * pool.length)];
+      const stance = idx < 3 ? "negate" : "question";
       const leverage = this.topology.upsertCell({
         id,
         term,
@@ -133,7 +161,7 @@ export class SwarmEngine {
         archetype: cell.archetype,
       });
       if (onAgentMove) onAgentMove({ id, term, stance, leverage });
-    }
+    });
   }
 
   chooseNextGesture(agent) {
@@ -141,45 +169,42 @@ export class SwarmEngine {
     const allCells = Array.from(this.topology.cells.values()).filter((c) => c.id !== agent.id);
     if (allCells.length === 0) return null;
 
-    // Weight human cells higher so the human immediately experiences transductive reciprocity
     const humanCells = allCells.filter((c) => c.isHuman);
+    const echoHuman = this._humanEchoRemaining > 0 && humanCells.length > 0;
+    if (echoHuman) this._humanEchoRemaining--;
+
     const focusCell =
-      humanCells.length > 0 && Math.random() < 0.42
+      echoHuman || (humanCells.length > 0 && Math.random() < 0.45)
         ? humanCells[Math.floor(Math.random() * humanCells.length)]
         : allCells[Math.floor(Math.random() * allCells.length)];
 
-    const { entropy, tensionRatio } = this.topology.telemetry;
+    // During bifurcation waves, even non-dialecticians participate in carving a counter-valley
+    if (this.waveMode === "bifurcating" && (agent.archetype === "dialectician" || agent.archetype === "bifurcator")) {
+      const counter = this.findCounterConcept(focusCell.term, pool);
+      if (counter) {
+        return { term: counter, stance: Math.random() < 0.55 ? "negate" : "question" };
+      }
+    }
+
+    // During human echo waves, resonators & simplicity-seekers amplify the human's conceptual basin
+    if (echoHuman && (agent.archetype === "resonator" || agent.archetype === "simplicity")) {
+      const allied = this.findResonantConcept(focusCell, pool);
+      return { term: allied, stance: "assert" };
+    }
 
     switch (agent.archetype) {
-      case "resonator": {
-        // Find a concept in the pool that resonates strongly with focusCell without verbatim copying
-        const candidates = pool
-          .filter((w) => normalizeText(w) !== normalizeText(focusCell.term))
-          .map((w) => ({
-            w,
-            rel: this.semantic.computeRelation({ term: w, stance: "assert" }, focusCell),
-          }))
-          .sort((a, b) => b.rel.resonance - a.rel.resonance);
-        const top = candidates.slice(0, 4);
-        const pick = top[Math.floor(Math.random() * top.length)]?.w || pool[0];
-        return { term: pick, stance: "assert" };
-      }
+      case "resonator":
+        return { term: this.findResonantConcept(focusCell, pool), stance: "assert" };
 
       case "dialectician": {
-        // When field converges too much or tension is low, counter an active basin or human term!
-        const target =
-          entropy < 0.55 || tensionRatio < 0.25
-            ? focusCell
-            : allCells[Math.floor(Math.random() * allCells.length)];
-        const counter = this.findCounterConcept(target.term, pool);
+        const counter = this.findCounterConcept(focusCell.term, pool);
         if (counter) {
-          return { term: counter, stance: Math.random() < 0.4 ? "negate" : "question" };
+          return { term: counter, stance: Math.random() < 0.45 ? "negate" : "question" };
         }
-        return { term: target.term, stance: "negate" };
+        return { term: focusCell.term, stance: "negate" };
       }
 
       case "bridger": {
-        // Look for two distinct basins and propose a concept resonant with both
         const clusters = this.topology.clusters;
         if (clusters.length >= 2) {
           const cA = { term: clusters[0].medoidTerm, stance: "assert" };
@@ -201,7 +226,6 @@ export class SwarmEngine {
       }
 
       case "simplicity": {
-        // Dessalles Simplicity-Seeker: pick a term maximizing aggregate resonance across 3 random neighbors
         const sample = allCells.slice(0, Math.min(4, allCells.length));
         let best = pool[0];
         let bestScore = -1;
@@ -220,12 +244,23 @@ export class SwarmEngine {
 
       case "bifurcator":
       default: {
-        // Injects poetic/orthogonal novelty to prevent premature lock-in
         const pick = pool[Math.floor(Math.random() * pool.length)];
         const stance = Math.random() < 0.35 ? "question" : "assert";
         return { term: pick, stance };
       }
     }
+  }
+
+  findResonantConcept(targetCell, pool) {
+    const candidates = pool
+      .filter((w) => normalizeText(w) !== normalizeText(targetCell.term))
+      .map((w) => ({
+        w,
+        rel: this.semantic.computeRelation({ term: w, stance: "assert" }, targetCell),
+      }))
+      .sort((a, b) => b.rel.resonance - a.rel.resonance);
+    const top = candidates.slice(0, 4);
+    return top[Math.floor(Math.random() * top.length)]?.w || pool[0];
   }
 
   findCounterConcept(term, pool) {
@@ -240,7 +275,6 @@ export class SwarmEngine {
         if (match) return match;
       }
     }
-    // Otherwise pick the pool concept with highest computed dialectical tension
     let best = null;
     let bestTension = 0.25;
     for (const w of pool) {

@@ -70,6 +70,13 @@
     </div>
   </header>
 
+  <!-- Overhead Meta-Noetic Mirror Refraction ("le miroir placé au-dessus") -->
+  <section class="noeme-mirror" id="noeme-mirror" aria-live="polite">
+    <span class="noeme-kicker" data-i18n="mirrorKicker">NOÈME COLLECTIF ÉMERGENT</span>
+    <p class="noeme-text" id="noeme-text">—</p>
+    <p class="noeme-diff hidden" id="noeme-diff"></p>
+  </section>
+
   <!-- Subtle Telemetry Strip (Top-Left under header) -->
   <aside class="telemetry-strip" aria-label="Field Telemetry">
     <div class="metric">
@@ -190,6 +197,11 @@
     <div class="cell-hud" aria-label="Your Noetic Cell">
       <div class="hud-meta">
         <span class="your-badge" data-i18n="yourCell">VOTRE CELLULE NOÉTIQUE</span>
+        <div class="intensity-group" role="group" aria-label="Gravity intensity">
+          <button type="button" class="int-btn" data-intensity="0.65" data-i18n="intensityWhisper">Murmure</button>
+          <button type="button" class="int-btn active" data-intensity="1.0" data-i18n="intensityPresence">Présence</button>
+          <button type="button" class="int-btn" data-intensity="1.55" data-i18n="intensityAnchor">Ancrage</button>
+        </div>
         <span class="leverage-readout mono" id="leverage-readout" title="Transductive leverage of your last gesture">ΔM 0.00</span>
       </div>
 

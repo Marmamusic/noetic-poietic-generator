@@ -1,11 +1,11 @@
-// Bilingual FR / EN UI strings, philosophical concept lexicons, and dialectical polarity pairs.
+// Bilingual FR / EN UI strings, philosophical concept lexicons, and dialectical polarity pairs (v2).
 
 export const TRANSLATIONS = {
   fr: {
     title: "Générateur Poïétique Noétique",
     subtitle: "Miroir anoptique de transindividuation collective",
-    topoManifold: "Champ",
-    topoSpiral: "Spirale",
+    topoManifold: "Terrain",
+    topoSpiral: "Mosaïque",
     mirrorLabel: "Miroir",
     engineFast: "Géométrie",
     engineLoading: "Neural…",
@@ -20,19 +20,24 @@ export const TRANSLATIONS = {
     metricSimplicity: "Simplicité",
     metricCells: "Cellules",
     yourCell: "VOTRE CELLULE NOÉTIQUE",
-    inputPlaceholder: "Un mot ou concept (1–3 termes)...",
+    inputPlaceholder: "Un mot ou concept (aperçu vivant à la frappe)...",
     emitBtn: "Projeter",
     stanceAssert: "Affirmer",
     stanceQuestion: "Questionner",
     stanceNegate: "Contredire",
     stanceBridge: "Relier",
+    intensityWhisper: "Murmure",
+    intensityPresence: "Présence",
+    intensityAnchor: "Ancrage",
+    mirrorKicker: "NOÈME COLLECTIF ÉMERGENT",
+    diffPrefix: "Inflexion",
     swarmTitle: "Essaim synthétique (Auber–Dessalles)",
-    swarmDesc: "Agents autonomes hétérogènes (résonateurs, dialecticiens, passeurs, simplificateurs, bifurcateurs) pour éprouver la boucle autopoïétique en solo.",
+    swarmDesc: "Agents autonomes hétérogènes animés par des vagues de convergence, cristallisation et bifurcation pour éprouver la boucle autopoïétique en solo.",
     swarmAgents: "Agents",
     swarmTempo: "Rythme",
     pause: "Pause",
     resume: "Reprendre",
-    swarmPerturb: "Perturber",
+    swarmPerturb: "Bifurquer",
     roomTitle: "Synchronisation Collective",
     roomDesc: "Les onglets ouverts sur cet appareil sont synchronisés instantanément. Créez ou rejoignez une salle P2P (WebRTC) pour expérimenter à plusieurs sans serveur.",
     roomCode: "Code de salle P2P",
@@ -41,7 +46,7 @@ export const TRANSLATIONS = {
     roomCopy: "Copier le lien",
     roomLeave: "Quitter P2P",
     llmTitle: "Miroir Méta-Noétique (LLM optionnel)",
-    llmDesc: "Par défaut, le miroir géométrique fonctionne localement sans clé API. Activez un observateur LLM non-servile (JSON structuré uniquement, aucun dialogue individuel) pour nommer bassins et axes dialectiques.",
+    llmDesc: "Par défaut, le miroir géométrique fonctionne localement sans clé API. Activez un observateur LLM non-servile (JSON structuré uniquement, aucun dialogue individuel) pour réfracter le noème collectif et les axes dialectiques.",
     llmEndpoint: "Endpoint (OpenAI / OpenRouter / Ollama)",
     llmModel: "Modèle",
     llmKey: "Clé API (session navigateur uniquement)",
@@ -50,13 +55,12 @@ export const TRANSLATIONS = {
     llmPulse: "Refléter maintenant",
     helpTitle: "Générateur Poïétique Noétique — Principes",
     helpHtml: `
-      <p>Inspiré du <strong>Générateur Poïétique</strong> d’Olivier Auber (1986) et de la <strong>transindividuation</strong> de Gilbert Simondon, ce dispositif remplace les pixels par des <em>mots et concepts</em>.</p>
+      <p>Inspiré du <strong>Générateur Poïétique</strong> d’Olivier Auber (1986) et de la <strong>transindividuation</strong> de Gilbert Simondon, ce dispositif remplace les pixels par des <em>mots et concepts</em> dans un champ de potentiel vivant.</p>
       <ul>
-        <li><strong>Localité stricte :</strong> vous ne contrôlez que votre propre cellule noétique (1 à 3 termes + posture épistémique). Personne ne peut effacer la cellule d’un autre.</li>
-        <li><strong>Le Miroir au-dessus :</strong> la machine ne vous répond jamais et ne lisse pas les conflits. Elle rend visibles les <em>bassins émergents</em>, les <em>axes dialectiques</em> (tensions irrésolues) et les <em>espaces négatifs</em> (ponts impensés).</li>
-        <li><strong>Transparence anoptique :</strong> cliquez sur n’importe quel bassin, axe, vide ou cellule pour inspecter sa provenance mathématique exacte.</li>
-        <li><strong>Champ ↔ Spirale :</strong> basculez entre le champ sémantique dynamique et la spirale fixe d’Auber où les membranes entre voisins révèlent résonances et fractures.</li>
-        <li><strong>Multi-humains :</strong> ouvrez plusieurs onglets pour tester instantanément, ou partagez une salle P2P WebRTC sans serveur.</li>
+        <li><strong>Terrain de potentiel & Mosaïque d’Auber :</strong> en mode <em>Terrain</em>, les concepts creusent des vallées de résonance et des crêtes d’interférence dialectique orientées selon la boussole PCA émergente. En mode <em>Mosaïque</em>, les cellules s’emboîtent bord à bord comme dans la spirale d’Auber.</li>
+        <li><strong>Aperçu fantôme à la frappe :</strong> avant même de valider, observez comment votre mot attire ou fracture le champ collectif.</li>
+        <li><strong>Le Noème au-dessus :</strong> la machine ne vous répond jamais ; elle réfracte l’état global de la pensée collective et affiche l’inflexion provoquée par votre geste.</li>
+        <li><strong>Transparence anoptique :</strong> cliquez sur n’importe quelle cellule, vallée, axe ou espace négatif (∅) pour inspecter sa provenance mathématique exacte.</li>
       </ul>
     `,
     phases: {
@@ -67,7 +71,7 @@ export const TRANSLATIONS = {
     },
     inspector: {
       cellKicker: "CELLULE NOÉTIQUE",
-      basinKicker: "BASSIN ÉMERGENT (MIROIR)",
+      basinKicker: "VALLÉE / RÉGIME ÉMERGENT",
       axisKicker: "AXE DIALECTIQUE (MIROIR)",
       voidKicker: "ESPACE NÉGATIF / POINT DE FUITE",
       human: "Humain",
@@ -88,7 +92,7 @@ export const TRANSLATIONS = {
       linkCopied: "Lien de la salle copié dans le presse-papiers.",
       neuralReady: "Moteur neural WASM actif — champ re-projeté.",
       neuralFailed: "Chargement neural indisponible (hors-ligne ou CDN bloqué). Mode géométrique maintenu.",
-      perturbed: "Perturbation dialectique injectée dans l’essaim.",
+      perturbed: "Vague de bifurcation injectée dans l’essaim.",
       exported: "Journal de morphogenèse exporté (JSON).",
       llmEnabled: "Observateur méta-noétique LLM activé.",
       llmDisabled: "Retour au miroir géométrique local.",
@@ -98,8 +102,8 @@ export const TRANSLATIONS = {
   en: {
     title: "Noetic Poietic Generator",
     subtitle: "Anoptical mirror for collective transindividuation",
-    topoManifold: "Manifold",
-    topoSpiral: "Spiral",
+    topoManifold: "Terrain",
+    topoSpiral: "Mosaic",
     mirrorLabel: "Mirror",
     engineFast: "Geometry",
     engineLoading: "Neural…",
@@ -114,19 +118,24 @@ export const TRANSLATIONS = {
     metricSimplicity: "Simplicity",
     metricCells: "Cells",
     yourCell: "YOUR NOETIC CELL",
-    inputPlaceholder: "A word or concept (1–3 terms)...",
+    inputPlaceholder: "A word or concept (live ghost preview as you type)...",
     emitBtn: "Project",
     stanceAssert: "Assert",
     stanceQuestion: "Question",
     stanceNegate: "Negate",
     stanceBridge: "Bridge",
+    intensityWhisper: "Whisper",
+    intensityPresence: "Presence",
+    intensityAnchor: "Anchor",
+    mirrorKicker: "EMERGENT COLLECTIVE NOEMA",
+    diffPrefix: "Inflection",
     swarmTitle: "Synthetic Swarm (Auber–Dessalles)",
-    swarmDesc: "Heterogeneous autonomous agents (resonators, dialecticians, bridgers, simplicity-seekers, bifurcators) to test the autopoietic feedback loop solo.",
+    swarmDesc: "Heterogeneous autonomous agents driven by collective convergence, crystallization, and bifurcation waves so you can experience the autopoietic loop solo.",
     swarmAgents: "Agents",
     swarmTempo: "Tempo",
     pause: "Pause",
     resume: "Resume",
-    swarmPerturb: "Perturb",
+    swarmPerturb: "Bifurcate",
     roomTitle: "Collective Synchronization",
     roomDesc: "Browser tabs on this device sync instantly. Create or join a serverless P2P WebRTC room to experiment live with others.",
     roomCode: "P2P Room Code",
@@ -135,7 +144,7 @@ export const TRANSLATIONS = {
     roomCopy: "Copy invite link",
     roomLeave: "Leave P2P",
     llmTitle: "Meta-Noetic Mirror (Optional LLM)",
-    llmDesc: "By default, the local geometric mirror runs with zero API keys. Optionally connect a non-servile overhead LLM observer (strict JSON only, never 1-to-1 chat) to name emergent basins and tension axes.",
+    llmDesc: "By default, the local geometric mirror runs with zero API keys. Optionally connect a non-servile overhead LLM observer (strict JSON only, never 1-to-1 chat) to refract the collective noema and dialectical axes.",
     llmEndpoint: "Endpoint (OpenAI / OpenRouter / Ollama)",
     llmModel: "Model",
     llmKey: "API Key (stored in sessionStorage only)",
@@ -144,13 +153,12 @@ export const TRANSLATIONS = {
     llmPulse: "Reflect now",
     helpTitle: "Noetic Poietic Generator — Principles",
     helpHtml: `
-      <p>Inspired by Olivier Auber’s <strong>Poietic Generator</strong> (1986) and Gilbert Simondon’s <strong>transindividuation</strong>, this instrument replaces pixels with <em>words and concepts</em>.</p>
+      <p>Inspired by Olivier Auber’s <strong>Poietic Generator</strong> (1986) and Gilbert Simondon’s <strong>transindividuation</strong>, this instrument replaces pixels with <em>words and concepts</em> in a living potential field.</p>
       <ul>
-        <li><strong>Strict Locality:</strong> You control only your own noetic cell (1–3 terms + epistemic stance). Nobody can overwrite someone else’s cell.</li>
-        <li><strong>The Overhead Mirror:</strong> The machine never chats with you or averages away conflict. It projects emergent <em>basins</em>, unresolved <em>dialectical axes</em>, and <em>negative-space bridges</em> above the field.</li>
-        <li><strong>Anoptical Transparency:</strong> Click any basin, tension axis, void, or cell to inspect its exact mathematical provenance.</li>
-        <li><strong>Manifold ↔ Spiral:</strong> Morph seamlessly between the dynamic semantic field and Auber’s fixed spiral lattice with live tension membranes.</li>
-        <li><strong>Multiplayer:</strong> Open multiple tabs for instant local sync, or share a serverless WebRTC P2P room link.</li>
+        <li><strong>Potential Terrain & Auber Mosaic:</strong> in <em>Terrain</em> mode, concepts carve resonance valleys and dialectical interference ridges oriented along the live emergent PCA compass. In <em>Mosaic</em> mode, tiles lock edge-to-edge like Auber’s 1986 spiral.</li>
+        <li><strong>Live Ghost Preview:</strong> as you type—before committing—feel where your concept pulls the collective field and which fault lines ignite.</li>
+        <li><strong>The Overhead Noema:</strong> the machine never chats with you; it refracts the global collective horizon and displays the live inflection caused by your gesture.</li>
+        <li><strong>Anoptical Transparency:</strong> click any cell, valley, axis, or negative space (∅) to inspect its exact mathematical provenance.</li>
       </ul>
     `,
     phases: {
@@ -161,7 +169,7 @@ export const TRANSLATIONS = {
     },
     inspector: {
       cellKicker: "NOETIC CELL",
-      basinKicker: "EMERGENT BASIN (MIRROR)",
+      basinKicker: "EMERGENT BASIN / REGIME",
       axisKicker: "DIALECTICAL AXIS (MIRROR)",
       voidKicker: "NEGATIVE SPACE / VANISHING POINT",
       human: "Human",
@@ -182,7 +190,7 @@ export const TRANSLATIONS = {
       linkCopied: "Room invite URL copied to clipboard.",
       neuralReady: "Browser-native WASM neural embeddings active.",
       neuralFailed: "Neural model unavailable (offline or CDN blocked). Staying on fast geometric engine.",
-      perturbed: "Dialectical perturbation injected into the swarm.",
+      perturbed: "Bifurcation wave injected into the swarm.",
       exported: "Morphogenesis replay log exported (JSON).",
       llmEnabled: "Overhead LLM meta-noetic observer enabled.",
       llmDisabled: "Returned to local geometric mirror.",
@@ -190,7 +198,6 @@ export const TRANSLATIONS = {
   },
 };
 
-// Curated seed pools for synthetic swarm & initial cell (bilingual)
 export const CONCEPT_POOLS = {
   fr: [
     "geste", "rythme", "transindividuation", "métastabilité", "miroir",
@@ -218,7 +225,6 @@ export const CONCEPT_POOLS = {
   ],
 };
 
-// Explicit dialectical polarity pairs (normalized lowercase stems, bilingual)
 export const POLARITY_PAIRS = [
   ["autonom", "automat"],
   ["autonom", "servit"],
