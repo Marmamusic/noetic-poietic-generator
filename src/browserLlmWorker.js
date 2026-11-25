@@ -11,7 +11,7 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
     return;
   }
 
-  self.postMessage({ type: "progress", status: "loading", progress: 2, file: "transformers.js" });
+  self.postMessage({ type: "progress", status: "loading", progress: 1, loadedMB: 0, totalMB: 0 });
 
   const { pipeline, env } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1");
   env.allowLocalModels = false;
@@ -20,23 +20,46 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
   const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
   let deviceToTry = hasWebGPU ? "webgpu" : "wasm";
 
+  // Track cumulative bytes across all downloaded files (config, tokenizer, and the large .onnx weights)
+  const fileTotals = new Map();
+  const fileLoaded = new Map();
+  let lastEmit = 0;
+
   const onProgress = (info) => {
     if (!info) return;
-    if (info.status === "progress" && typeof info.progress === "number") {
-      self.postMessage({
-        type: "progress",
-        status: "downloading",
-        progress: Math.round(info.progress),
-        file: info.file || "",
-      });
-    } else if (info.status === "initiate" || info.status === "done") {
-      self.postMessage({
-        type: "progress",
-        status: info.status,
-        progress: info.status === "done" ? 100 : 5,
-        file: info.file || "",
-      });
+    const file = info.file || "model";
+    if (typeof info.total === "number" && info.total > 0) {
+      fileTotals.set(file, info.total);
     }
+    if (typeof info.loaded === "number" && info.loaded >= 0) {
+      fileLoaded.set(file, info.loaded);
+    } else if (info.status === "done" && fileTotals.has(file)) {
+      fileLoaded.set(file, fileTotals.get(file));
+    }
+
+    let totalBytes = 0;
+    let loadedBytes = 0;
+    for (const [f, tot] of fileTotals.entries()) {
+      totalBytes += tot;
+      loadedBytes += Math.min(tot, fileLoaded.get(f) || 0);
+    }
+
+    const now = performance.now();
+    if (now - lastEmit < 120 && info.status === "progress") return;
+    lastEmit = now;
+
+    // Only report 99% max during download so 100% means compiled & ready
+    const rawPct = totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 99) : 3;
+    const isCompiling = totalBytes > 50_000_000 && loadedBytes >= totalBytes * 0.995;
+
+    self.postMessage({
+      type: "progress",
+      status: isCompiling ? "compiling" : "downloading",
+      progress: Math.max(1, Math.min(99, rawPct)),
+      loadedMB: Math.round(loadedBytes / (1024 * 1024)),
+      totalMB: Math.round(totalBytes / (1024 * 1024)),
+      file,
+    });
   };
 
   try {
@@ -48,8 +71,9 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
     activeDevice = deviceToTry;
   } catch (gpuErr) {
     if (deviceToTry === "webgpu") {
-      // Seamless fallback to universal WASM if WebGPU adapter/shader fails
-      self.postMessage({ type: "progress", status: "fallback-wasm", progress: 15, file: "wasm" });
+      fileTotals.clear();
+      fileLoaded.clear();
+      self.postMessage({ type: "progress", status: "fallback-wasm", progress: 5, loadedMB: 0, totalMB: 0 });
       generator = await pipeline("text-generation", modelId, {
         device: "wasm",
         dtype: "q4",

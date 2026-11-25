@@ -150,7 +150,7 @@ export class PalimpsestEngine {
     return new Promise((resolve) => {
       try {
         if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=4", import.meta.url), {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=4b", import.meta.url), {
             type: "module",
           });
         }
@@ -158,15 +158,20 @@ export class PalimpsestEngine {
         const handleInitMsg = (ev) => {
           const msg = ev.data || {};
           if (msg.type === "progress") {
-            this.browserLlmProgress = Math.max(this.browserLlmProgress, msg.progress || 0);
+            this.browserLlmProgress = msg.progress || 1;
+            const mbInfo = msg.totalMB > 10 ? ` · ${msg.loadedMB}/${msg.totalMB} MB` : "";
             const label =
               msg.status === "fallback-wasm"
                 ? lang === "fr"
                   ? "WebGPU indisponible — bascule WASM…"
                   : "WebGPU unavailable — switching to WASM…"
+                : msg.status === "compiling"
+                ? lang === "fr"
+                  ? "Compilation du modèle en mémoire…"
+                  : "Compiling model into memory…"
                 : lang === "fr"
-                ? `Téléchargement Qwen2.5 (${this.browserLlmProgress}%)…`
-                : `Downloading Qwen2.5 (${this.browserLlmProgress}%)…`;
+                ? `Téléchargement Qwen2.5 (${this.browserLlmProgress}%${mbInfo})…`
+                : `Downloading Qwen2.5 (${this.browserLlmProgress}%${mbInfo})…`;
             this._emitStatus(label, "loading");
             this._notifyChange();
           } else if (msg.type === "ready") {
