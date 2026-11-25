@@ -1,7 +1,7 @@
 // Layer 2 (v2): Live 2D PCA Semantic Compass, Continuous Potential-Guided Physics,
 // Edge-to-Edge Auber Spiral Mosaic, Conviction Weighting, Ghost Preview & Telemetry
 
-import { AXIS_COUNT } from "./semanticEngine.js?v=5";
+import { AXIS_COUNT } from "./semanticEngine.js?v=6";
 
 /**
  * Exact Ulam / Olivier Auber square spiral coordinates (index 0 at center).
@@ -300,11 +300,11 @@ export class TopologyEngine {
    * Projects a draft concept live (before Enter!) so the user physically feels
    * where their word will land and which tensions/resonances will ignite.
    */
-  computeGhostPreview(localCellId, draftTerm, draftStance = "assert") {
+  computeGhostPreview(editingCellId, draftTerm, draftStance = "assert") {
     const clean = (draftTerm || "").trim();
-    const localCell = this.cells.get(localCellId);
-    if (!clean || !localCell) return null;
-    if (clean.toLowerCase() === localCell.term.toLowerCase() && draftStance === localCell.stance) {
+    if (!clean || this.cells.size === 0) return null;
+    const localCell = editingCellId ? this.cells.get(editingCellId) : null;
+    if (localCell && clean.toLowerCase() === localCell.term.toLowerCase() && draftStance === localCell.stance) {
       return null;
     }
 
@@ -317,14 +317,13 @@ export class TopologyEngine {
     const px = dot24(diff, this.pc1);
     const py = -dot24(diff, this.pc2);
 
-    // Estimate target world coordinates on the live PCA terrain
     const gx = Math.max(-360, Math.min(360, px * 380));
     const gy = Math.max(-230, Math.min(230, py * 250));
 
     const draftObj = { term: clean, stance: draftStance, embedding: draftEmb };
     const rays = [];
     for (const other of this.cells.values()) {
-      if (other.id === localCellId) continue;
+      if (editingCellId && other.id === editingCellId) continue;
       const rel = this.semantic.computeRelation(draftObj, other);
       if (rel.type === "tension" && rel.tension >= 0.45) {
         rays.push({ targetId: other.id, x: other.x, y: other.y, type: "tension", strength: rel.tension });
@@ -335,8 +334,8 @@ export class TopologyEngine {
     rays.sort((a, b) => b.strength - a.strength);
 
     return {
-      fromX: localCell.x,
-      fromY: localCell.y,
+      fromX: localCell ? localCell.x : null,
+      fromY: localCell ? localCell.y : null,
       x: gx,
       y: gy,
       term: clean,
@@ -403,7 +402,17 @@ export class TopologyEngine {
     if (n === 0) {
       this.edges = [];
       this.clusters = [];
+      this.telemetry.entropy = 0;
+      this.telemetry.tensionRatio = 0;
+      this.telemetry.metastability = 0;
+      this.telemetry.simplicity = 0;
+      this.telemetry.phase = "diffuse";
       return 0;
+    }
+
+    if (n === 1) {
+      list[0].targetX = 0;
+      list[0].targetY = 0;
     }
 
     // Update live 2D PCA compass so manifold coordinates remain semantically meaningful

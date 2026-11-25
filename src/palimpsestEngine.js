@@ -5,8 +5,8 @@
 // - Automatic co-occurrence extraction guarantees map sculpting even on compact 0.5B models
 // - Client-side semantic diff choreography drives focus-in, morphing, FLIP rearrangement, and lingering fade
 
-import { cosineSimilarity } from "./semanticEngine.js?v=5";
-import { normalizeText } from "./i18n.js?v=5";
+import { cosineSimilarity } from "./semanticEngine.js?v=6";
+import { normalizeText } from "./i18n.js?v=6";
 
 export const LLM_PRESETS = {
   browser: {
@@ -149,7 +149,7 @@ export class PalimpsestEngine {
     return new Promise((resolve) => {
       try {
         if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=5", import.meta.url), {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=6", import.meta.url), {
             type: "module",
           });
         }
@@ -223,6 +223,17 @@ export class PalimpsestEngine {
 
   scheduleGestation(lang = "fr", trigger = null, immediate = false) {
     if (!this.llmEnabled) return;
+    if (this.topology.cells.size === 0) {
+      this.isGestating = false;
+      this._emitStatus(
+        lang === "fr"
+          ? "LLM prêt — entrez un premier mot ci-dessous"
+          : "LLM ready — enter a first word below",
+        "ready"
+      );
+      this._notifyChange();
+      return;
+    }
     if (trigger) this._pendingTrigger = trigger;
     if (this._gestationTimer) clearTimeout(this._gestationTimer);
 
@@ -272,6 +283,7 @@ export class PalimpsestEngine {
 
   async pulse(lang = "fr") {
     if (!this.llmEnabled || this._inFlight) return;
+    if (this.topology.cells.size === 0) return;
     this._inFlight = true;
     this.isGestating = true;
     this._lastPulseAt = performance.now();
@@ -354,21 +366,30 @@ export class PalimpsestEngine {
       .map((s) => s.text)
       .join("\n");
 
+    const totalWords = humanList.length + uniqueOthers.length;
+
     if (lang === "fr") {
-      const system = [
-        "Tu contemples un ensemble vivant de mots offerts par plusieurs personnes.",
-        "Ton rôle est double : d'abord tisser des liens libres entre ces mots pour dessiner leur carte vivante, puis laisser émerger la pensée qui te vient à l'esprit.",
-        "Réponds exactement en deux blocs simples :",
-        "LIENS:",
-        "3 à 5 lignes au format « motA ~ motB : lien en 2-4 mots » (affinité ou pont) ou « motA <> motB : tension en 2-4 mots » (contraste ou friction), en choisissant des mots présents dans la liste.",
-        "TEXTE:",
-        "3 à 4 phrases courtes, fluides et évocatrices (une par ligne) exprimant librement tout ce que cette carte éveille en toi — images, associations, questions ou aphorismes. Pas de puces, pas de numéros, pas de méta-commentaire.",
-      ].join("\n");
+      const system =
+        totalWords <= 1
+          ? [
+              "Tu contemples un premier mot ou concept posé dans un espace vierge.",
+              "Laisse venir librement 2 à 3 phrases courtes, vivantes et évocatrices (une par ligne) exprimant ce que ce mot éveille en toi.",
+              "Pas de puces, pas de numéros, pas de titre, pas de méta-commentaire.",
+            ].join("\n")
+          : [
+              "Tu contemples un ensemble vivant de mots offerts par plusieurs personnes.",
+              "Ton rôle est double : d'abord tisser des liens libres entre ces mots pour dessiner leur carte vivante, puis laisser émerger la pensée qui te vient à l'esprit.",
+              "Réponds exactement en deux blocs simples :",
+              "LIENS:",
+              "2 à 4 lignes au format « motA ~ motB : lien en 2-4 mots » (affinité ou pont) ou « motA <> motB : tension en 2-4 mots » (contraste ou friction), en choisissant des mots présents dans la liste.",
+              "TEXTE:",
+              "3 phrases courtes, fluides et évocatrices (une par ligne) exprimant librement tout ce que cette carte éveille en toi — images, associations, questions ou aphorismes. Pas de puces, pas de numéros, pas de méta-commentaire.",
+            ].join("\n");
 
       const userParts = [
-        `Mots offerts au centre : ${humanList.join(", ") || "transindividuation"}`,
+        humanList.length ? `Mots offerts : ${humanList.join(", ")}` : "",
         uniqueOthers.length ? `Autres mots dans le champ : ${uniqueOthers.join(", ")}` : "",
-        trigger?.term ? `Nouveau mot qui vient de bouger : ${trigger.term}` : "",
+        trigger?.term ? `Mot qui vient d’arriver ou de bouger : ${trigger.term}` : "",
         prevAlive ? `Pensées précédentes en cours de métamorphose :\n${prevAlive}` : "",
       ].filter(Boolean);
 
@@ -378,18 +399,25 @@ export class PalimpsestEngine {
       ];
     }
 
-    const system = [
-      "You are contemplating a living collection of words offered by several minds.",
-      "Your role is twofold: first weave fresh conceptual links between these words to sculpt their living map, then write whatever thoughts freely come to mind.",
-      "Reply in exactly two simple blocks:",
-      "LINKS:",
-      "3 to 5 lines using 'wordA ~ wordB : 2-4 word resonance' (affinity/bridge) or 'wordA <> wordB : 2-4 word tension' (contrast/friction), picking words from the offered list.",
-      "TEXT:",
-      "3 to 4 short, vivid, natural sentences (one per line) freely expressing whatever this woven map brings to mind—images, associations, questions, or aphorisms. No bullets, no numbering, no meta-commentary.",
-    ].join("\n");
+    const system =
+      totalWords <= 1
+        ? [
+            "You are contemplating a single opening word placed in a blank space.",
+            "Freely write 2 to 3 short, vivid sentences (one per line) expressing whatever genuinely comes to mind from this seed.",
+            "No bullets, no numbering, no titles, no meta-commentary.",
+          ].join("\n")
+        : [
+            "You are contemplating a living collection of words offered by several minds.",
+            "Your role is twofold: first weave fresh conceptual links between these words to sculpt their living map, then write whatever thoughts freely come to mind.",
+            "Reply in exactly two simple blocks:",
+            "LINKS:",
+            "2 to 4 lines using 'wordA ~ wordB : 2-4 word resonance' (affinity/bridge) or 'wordA <> wordB : 2-4 word tension' (contrast/friction), picking words from the offered list.",
+            "TEXT:",
+            "3 short, vivid, natural sentences (one per line) freely expressing whatever this woven map brings to mind—images, associations, questions, or aphorisms. No bullets, no numbering, no meta-commentary.",
+          ].join("\n");
 
     const userParts = [
-      `Foreground offered words: ${humanList.join(", ") || "transindividuation"}`,
+      humanList.length ? `Offered words: ${humanList.join(", ")}` : "",
       uniqueOthers.length ? `Surrounding words in the field: ${uniqueOthers.join(", ")}` : "",
       trigger?.term ? `Word that just arrived or shifted: ${trigger.term}` : "",
       prevAlive ? `Previous drifting thoughts:\n${prevAlive}` : "",
@@ -416,7 +444,7 @@ export class PalimpsestEngine {
           type: "generate",
           requestId,
           messages,
-          maxNewTokens: 210,
+          maxNewTokens: 155,
           temperature: 0.85,
         });
       });

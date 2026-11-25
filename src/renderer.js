@@ -4,7 +4,7 @@
 // - Mosaic Mode: true edge-to-edge Olivier Auber square spiral mosaic with chromatic resonance fields
 //   and glowing/fractured shared neighbor membranes
 
-import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=5";
+import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=6";
 
 const STANCE_META = {
   assert: { glyph: "●", color: "#7dd3fc" },
@@ -656,15 +656,17 @@ export class NoeticRenderer {
       ctx.stroke();
     }
 
-    // Trajectory arc from current local cell to projected ghost site
-    ctx.beginPath();
-    ctx.moveTo(ghost.fromX, ghost.fromY);
-    ctx.lineTo(ghost.x, ghost.y);
-    ctx.strokeStyle = `hsla(${ghost.hue}, 90%, 75%, ${0.65 * pulse})`;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 5]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Trajectory arc from edited cell to projected ghost site (if editing an existing voice)
+    if (ghost.fromX != null && ghost.fromY != null) {
+      ctx.beginPath();
+      ctx.moveTo(ghost.fromX, ghost.fromY);
+      ctx.lineTo(ghost.x, ghost.y);
+      ctx.strokeStyle = `hsla(${ghost.hue}, 90%, 75%, ${0.65 * pulse})`;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Ghost chromatic potential preview halo
     const grad = ctx.createRadialGradient(ghost.x, ghost.y, 4, ghost.x, ghost.y, 64);

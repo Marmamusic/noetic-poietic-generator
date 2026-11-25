@@ -54,12 +54,16 @@ export class SyncEngine {
     if (!msg || msg.sender === this.localId) return;
 
     if (msg.type === "hello") {
-      const local = this.handlers.getLocalCell();
-      if (local) {
+      const locals = this.handlers.getLocalCells
+        ? this.handlers.getLocalCells()
+        : this.handlers.getLocalCell
+        ? [this.handlers.getLocalCell()].filter(Boolean)
+        : [];
+      for (const local of locals) {
         const reply = {
           type: "cell",
           sender: this.localId,
-          cell: { id: local.id, term: local.term, stance: local.stance },
+          cell: { id: local.id, term: local.term, stance: local.stance, intensity: local.intensity || 1.0 },
         };
         if (source === "tab" && this.bc) this.bc.postMessage(reply);
         if (fromConn && fromConn.open) fromConn.send(reply);
@@ -184,12 +188,16 @@ export class SyncEngine {
         this.roomCode
       );
       conn.send({ type: "hello", sender: this.localId });
-      const local = this.handlers.getLocalCell();
-      if (local) {
+      const locals = this.handlers.getLocalCells
+        ? this.handlers.getLocalCells()
+        : this.handlers.getLocalCell
+        ? [this.handlers.getLocalCell()].filter(Boolean)
+        : [];
+      for (const local of locals) {
         conn.send({
           type: "cell",
           sender: this.localId,
-          cell: { id: local.id, term: local.term, stance: local.stance },
+          cell: { id: local.id, term: local.term, stance: local.stance, intensity: local.intensity || 1.0 },
         });
       }
     });

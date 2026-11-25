@@ -2,7 +2,7 @@
 // Agents perceive human gestures directly and ride macro-waves so the terrain breathes organically
 // instead of exhibiting flat Brownian jitter.
 
-import { CONCEPT_POOLS, POLARITY_PAIRS, normalizeText } from "./i18n.js?v=5";
+import { CONCEPT_POOLS, POLARITY_PAIRS, normalizeText } from "./i18n.js?v=6";
 
 const ARCHETYPES = ["resonator", "dialectician", "bridger", "simplicity", "bifurcator"];
 
@@ -11,7 +11,7 @@ export class SwarmEngine {
     this.topology = topologyEngine;
     this.semantic = semanticEngine;
     this.agentIds = [];
-    this.targetCount = 16;
+    this.targetCount = 0;
     this.tempo = 5; // 1..10
     this.paused = false;
     this.lang = "fr";

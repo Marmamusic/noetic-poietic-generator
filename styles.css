@@ -1060,6 +1060,81 @@ body.mode-palimpsest #noetic-canvas {
   gap: 9px;
 }
 
+.voices-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 64px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.voice-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.voice-chip:hover {
+  border-color: var(--border-active);
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.voice-chip.editing {
+  border-color: var(--accent-amber);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fef3c7;
+}
+
+.voice-chip-del {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+.voice-chip-del:hover {
+  color: var(--accent-coral);
+}
+
+.voice-clear-btn {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.voice-clear-btn:hover {
+  color: var(--accent-coral);
+  background: rgba(251, 113, 133, 0.1);
+}
+
+.cloud-empty {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.08rem;
+  color: var(--text-muted);
+}
+
 .hud-meta {
   display: flex;
   align-items: center;

@@ -1,16 +1,19 @@
-// Main Orchestrator for the Noetic Poietic Generator (v5 — LLM-Sculpted Dynamic Map & Free-Associative Palimpsest)
+// Main Orchestrator for the Noetic Poietic Generator (v6 — Blank Tabula-Rasa Start & Multi-Voice Entry)
 
-import { TRANSLATIONS } from "./i18n.js?v=5";
-import { SemanticEngine } from "./semanticEngine.js?v=5";
-import { TopologyEngine } from "./topologyEngine.js?v=5";
-import { MirrorEngine } from "./mirrorEngine.js?v=5";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=5";
-import { SwarmEngine } from "./swarmEngine.js?v=5";
-import { SyncEngine } from "./syncEngine.js?v=5";
-import { ReplayEngine } from "./replayEngine.js?v=5";
-import { NoeticRenderer } from "./renderer.js?v=5";
+import { TRANSLATIONS } from "./i18n.js?v=6";
+import { SemanticEngine } from "./semanticEngine.js?v=6";
+import { TopologyEngine } from "./topologyEngine.js?v=6";
+import { MirrorEngine } from "./mirrorEngine.js?v=6";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=6";
+import { SwarmEngine } from "./swarmEngine.js?v=6";
+import { SyncEngine } from "./syncEngine.js?v=6";
+import { ReplayEngine } from "./replayEngine.js?v=6";
+import { NoeticRenderer } from "./renderer.js?v=6";
 
-const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
+const sessionId = `human-${Math.random().toString(36).slice(2, 7)}`;
+let voiceSeq = 0;
+let localVoiceIds = []; // Multiple voices contributed from this browser (as if multiple people!)
+let editingVoiceId = null; // When null, submitting adds a new voice; when set, mutates that voice
 
 // Core engines
 const semantic = new SemanticEngine();
@@ -61,6 +64,9 @@ const el = {
   noemeMirror: document.getElementById("noeme-mirror"),
   noemeText: document.getElementById("noeme-text"),
   noemeDiff: document.getElementById("noeme-diff"),
+  voicesBar: document.getElementById("voices-bar"),
+  hudModeBadge: document.getElementById("hud-mode-badge"),
+  btnEmit: document.getElementById("btn-emit"),
   inputConcept: document.getElementById("input-concept"),
   tokenCounter: document.getElementById("token-counter"),
   leverageReadout: document.getElementById("leverage-readout"),
@@ -152,9 +158,12 @@ const sentenceDomMap = new Map();
 function renderCloudPreview() {
   if (!el.palCloudPreview) return;
   const cells = Array.from(topology.cells.values());
+  if (cells.length === 0) {
+    el.palCloudPreview.innerHTML = `<span class="cloud-empty">${escapeHtml(t().palEmptyCloud)}</span>`;
+    return;
+  }
   const seen = new Set();
   const chips = [];
-  // Show human words first, then unique surrounding swarm concepts
   const ordered = [...cells].sort((a, b) => (a.isHuman === b.isHuman ? 0 : a.isHuman ? -1 : 1));
   for (const c of ordered) {
     const low = c.term.toLowerCase();
@@ -169,9 +178,136 @@ function renderCloudPreview() {
       .join(" ");
     const sym = c.stance === "negate" ? "⊘ " : c.stance === "question" ? "? " : c.stance === "bridge" ? "⇄ " : "";
     chips.push(`<span class="${cls}">${sym}${escapeHtml(c.term)}</span>`);
-    if (chips.length >= 15) break;
+    if (chips.length >= 18) break;
   }
   el.palCloudPreview.innerHTML = chips.join("");
+}
+
+function renderVoicesBar() {
+  if (!el.voicesBar) return;
+  // Prune any removed IDs
+  localVoiceIds = localVoiceIds.filter((id) => topology.cells.has(id));
+  if (editingVoiceId && !topology.cells.has(editingVoiceId)) {
+    editingVoiceId = null;
+  }
+
+  // Update HUD mode label & submit button text
+  const dict = t();
+  if (editingVoiceId) {
+    const c = topology.cells.get(editingVoiceId);
+    el.hudModeBadge.textContent = `${dict.editingVoice} · ${c ? c.term : ""}`;
+    el.btnEmit.textContent = dict.updateBtn;
+  } else {
+    el.hudModeBadge.textContent = dict.yourCell;
+    el.btnEmit.textContent = dict.emitBtn;
+  }
+
+  if (localVoiceIds.length === 0) {
+    el.voicesBar.classList.add("hidden");
+    el.voicesBar.innerHTML = "";
+    return;
+  }
+
+  el.voicesBar.classList.remove("hidden");
+  el.voicesBar.innerHTML = "";
+
+  const stanceSym = { assert: "●", question: "?", negate: "⊘", bridge: "⇄" };
+
+  for (const id of localVoiceIds) {
+    const cell = topology.cells.get(id);
+    if (!cell) continue;
+    const chip = document.createElement("span");
+    chip.className = `voice-chip${editingVoiceId === id ? " editing" : ""}`;
+    chip.title = "Click to edit this voice";
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = `${stanceSym[cell.stance] || "●"} ${cell.term}`;
+    chip.appendChild(labelSpan);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "voice-chip-del";
+    delBtn.textContent = "×";
+    delBtn.title = "Remove voice";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeLocalVoice(id);
+    });
+    chip.appendChild(delBtn);
+
+    chip.addEventListener("click", () => {
+      if (editingVoiceId === id) {
+        // Cancel edit -> back to adding new voices
+        editingVoiceId = null;
+        el.inputConcept.value = "";
+        updateTokenCounterAndGhost();
+        renderVoicesBar();
+      } else {
+        editingVoiceId = id;
+        el.inputConcept.value = cell.term;
+        currentStance = cell.stance || "assert";
+        currentIntensity = cell.intensity || 1.0;
+        el.stanceBtns.forEach((b) => b.classList.toggle("active", b.getAttribute("data-stance") === currentStance));
+        el.intensityBtns.forEach((b) => b.classList.toggle("active", Number(b.getAttribute("data-intensity")) === currentIntensity));
+        updateTokenCounterAndGhost();
+        renderVoicesBar();
+        el.inputConcept.focus();
+      }
+    });
+
+    el.voicesBar.appendChild(chip);
+  }
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "voice-clear-btn";
+  clearBtn.textContent = dict.clearVoices;
+  clearBtn.addEventListener("click", clearAllLocalVoices);
+  el.voicesBar.appendChild(clearBtn);
+}
+
+function removeLocalVoice(id) {
+  localVoiceIds = localVoiceIds.filter((vid) => vid !== id);
+  if (editingVoiceId === id) {
+    editingVoiceId = null;
+    el.inputConcept.value = "";
+  }
+  topology.removeCell(id);
+  sync.broadcast({ type: "leave", id });
+  mirror.update(currentLang);
+  updateNoemeUI();
+  updateTelemetryUI(topology.telemetry);
+  renderVoicesBar();
+  renderCloudPreview();
+  if (palimpsest.llmEnabled) {
+    if (topology.cells.size > 0) {
+      palimpsest.scheduleGestation(currentLang, { source: "remove" });
+    } else {
+      palimpsest.sentences = [];
+      palimpsest.activeLlmLinks = [];
+      renderPalimpsestDOM([], { isGestating: false });
+    }
+  }
+}
+
+function clearAllLocalVoices() {
+  for (const id of localVoiceIds) {
+    topology.removeCell(id);
+    sync.broadcast({ type: "leave", id });
+  }
+  localVoiceIds = [];
+  editingVoiceId = null;
+  topology.llmLinks.clear();
+  palimpsest.sentences = [];
+  palimpsest.activeLlmLinks = [];
+  el.inputConcept.value = "";
+  el.tokenCounter.textContent = "0/3";
+  mirror.update(currentLang);
+  updateNoemeUI();
+  updateTelemetryUI(topology.telemetry);
+  renderVoicesBar();
+  renderPalimpsestDOM([], { isGestating: false });
+  renderCloudPreview();
 }
 
 function renderLlmLinksStrip(links = []) {
@@ -358,6 +494,8 @@ function applyTranslations() {
   updateNeuralButtonUI();
   updateNoemeUI();
   updateTelemetryUI(topology.telemetry);
+  renderVoicesBar();
+  renderCloudPreview();
   if (selectedArtifact) renderInspector();
 }
 
@@ -396,8 +534,8 @@ function updateNoemeUI(overrideText = null) {
 }
 
 // Multiplayer SyncEngine
-const sync = new SyncEngine(localId, {
-  getLocalCell: () => topology.cells.get(localId),
+const sync = new SyncEngine(sessionId, {
+  getLocalCells: () => localVoiceIds.map((id) => topology.cells.get(id)).filter(Boolean),
   onRemoteCell: (cell) => {
     topology.upsertCell({
       id: cell.id,
@@ -448,23 +586,25 @@ function updateTokenCounterAndGhost() {
   el.tokenCounter.classList.toggle("over", words.length > 3);
 
   const draft = sanitizeConcept(raw);
-  ghostPreview = draft ? topology.computeGhostPreview(localId, draft, currentStance) : null;
+  ghostPreview = draft ? topology.computeGhostPreview(editingVoiceId, draft, currentStance) : null;
 }
 
 async function commitLocalGesture(rawTerm, stance = currentStance, intensity = currentIntensity) {
   const term = sanitizeConcept(rawTerm);
   if (!term) return;
-  el.inputConcept.value = term;
   ghostPreview = null;
-  const words = term.split(" ").filter(Boolean);
-  el.tokenCounter.textContent = `${words.length}/3`;
-  el.tokenCounter.classList.remove("over");
 
   if (replay.isScrubbing) exitReplayScrub();
 
+  const isEditing = Boolean(editingVoiceId && topology.cells.has(editingVoiceId));
+  const targetId = isEditing ? editingVoiceId : `${sessionId}-v${++voiceSeq}`;
+  if (!isEditing) {
+    localVoiceIds.push(targetId);
+  }
+
   const prevNoeme = mirror.noeme;
   const leverage = topology.upsertCell({
-    id: localId,
+    id: targetId,
     term,
     stance,
     intensity,
@@ -472,17 +612,23 @@ async function commitLocalGesture(rawTerm, stance = currentStance, intensity = c
     isLocal: true,
   });
 
+  // Clear input & exit edit mode so you can immediately type the next person's word!
+  editingVoiceId = null;
+  el.inputConcept.value = "";
+  el.tokenCounter.textContent = "0/3";
+  el.tokenCounter.classList.remove("over");
+
   swarm.notifyHumanGesture(term);
 
   el.leverageReadout.textContent = `ΔM ${leverage.toFixed(2)}`;
-  sync.publishLocalCell({ id: localId, term, stance, intensity });
+  sync.publishLocalCell({ id: targetId, term, stance, intensity });
 
   if (semantic.mode === "neural") {
     const emb = await semantic.embed(term);
-    const cell = topology.cells.get(localId);
+    const cell = topology.cells.get(targetId);
     if (cell) {
       cell.embedding = emb;
-      topology.recomputeGraph(localId, currentLang);
+      topology.recomputeGraph(targetId, currentLang);
     }
   }
 
@@ -490,11 +636,14 @@ async function commitLocalGesture(rawTerm, stance = currentStance, intensity = c
   mirror.update(currentLang);
   mirror.recordHumanInflection(prevNoeme, term, leverage);
   updateNoemeUI();
+  updateTelemetryUI(topology.telemetry);
+  renderVoicesBar();
+  renderCloudPreview();
 
   // Trigger contemplative delayed morphogenetic reorganization of the living emerging text!
   palimpsest.scheduleGestation(currentLang, { source: "human", term, stance, leverage });
 
-  replay.capture(topology, mirror, palimpsest, `you:${term} (${stance})`);
+  replay.capture(topology, mirror, palimpsest, `voice:${term} (${stance})`);
   syncReplaySlider();
   if (selectedArtifact) renderInspector();
 }
@@ -531,9 +680,11 @@ el.stanceBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
     currentStance = btn.getAttribute("data-stance");
     el.stanceBtns.forEach((b) => b.classList.toggle("active", b === btn));
-    const localCell = topology.cells.get(localId);
-    if (localCell) {
-      commitLocalGesture(el.inputConcept.value || localCell.term, currentStance, currentIntensity);
+    if (editingVoiceId && topology.cells.has(editingVoiceId)) {
+      const c = topology.cells.get(editingVoiceId);
+      commitLocalGesture(el.inputConcept.value || c.term, currentStance, currentIntensity);
+    } else {
+      updateTokenCounterAndGhost();
     }
   });
 });
@@ -542,9 +693,9 @@ el.intensityBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
     currentIntensity = Number(btn.getAttribute("data-intensity")) || 1.0;
     el.intensityBtns.forEach((b) => b.classList.toggle("active", b === btn));
-    const localCell = topology.cells.get(localId);
-    if (localCell) {
-      commitLocalGesture(el.inputConcept.value || localCell.term, currentStance, currentIntensity);
+    if (editingVoiceId && topology.cells.has(editingVoiceId)) {
+      const c = topology.cells.get(editingVoiceId);
+      commitLocalGesture(el.inputConcept.value || c.term, currentStance, currentIntensity);
     }
   });
 });
@@ -1063,31 +1214,21 @@ function updateTelemetryUI(tele) {
   el.phaseDot.style.boxShadow = `0 0 14px ${phaseColor}`;
 }
 
-// Initialization
+// Initialization: Start completely blank (0 words, 0 swarm agents) so you enter every voice yourself!
 function init() {
   restoreSavedLlmConfig();
 
-  const initialConcept = "transindividuation";
-  el.inputConcept.value = initialConcept;
-
-  topology.upsertCell({
-    id: localId,
-    term: initialConcept,
-    stance: "assert",
-    intensity: currentIntensity,
-    isHuman: true,
-    isLocal: true,
-  });
+  el.inputConcept.value = "";
+  el.tokenCounter.textContent = "0/3";
 
   swarm.setLanguage(currentLang, false);
-  swarm.setTargetCount(16);
+  swarm.setTargetCount(0);
 
-  for (let i = 0; i < 45; i++) topology.stepPhysics(0.025);
   applyTranslations();
   setViewMode("palimpsest");
+  renderVoicesBar();
   renderPalimpsestDOM(palimpsest.sentences, { isGestating: false });
-  el.tokenCounter.textContent = "1/3";
-  replay.capture(topology, mirror, palimpsest, "init");
+  replay.capture(topology, mirror, palimpsest, "init-blank");
   syncReplaySlider();
 
   const params = new URLSearchParams(window.location.search);
@@ -1097,6 +1238,7 @@ function init() {
     sync.joinRoom(roomParam);
   }
 
+  el.inputConcept.focus();
   requestAnimationFrame(loop);
 }
 
