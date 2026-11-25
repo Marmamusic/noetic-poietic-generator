@@ -1,13 +1,13 @@
 // Main Orchestrator for the Noetic Poietic Generator (v2)
 
-import { TRANSLATIONS } from "./i18n.js";
-import { SemanticEngine } from "./semanticEngine.js";
-import { TopologyEngine } from "./topologyEngine.js";
-import { MirrorEngine } from "./mirrorEngine.js";
-import { SwarmEngine } from "./swarmEngine.js";
-import { SyncEngine } from "./syncEngine.js";
-import { ReplayEngine } from "./replayEngine.js";
-import { NoeticRenderer } from "./renderer.js";
+import { TRANSLATIONS } from "./i18n.js?v=2";
+import { SemanticEngine } from "./semanticEngine.js?v=2";
+import { TopologyEngine } from "./topologyEngine.js?v=2";
+import { MirrorEngine } from "./mirrorEngine.js?v=2";
+import { SwarmEngine } from "./swarmEngine.js?v=2";
+import { SyncEngine } from "./syncEngine.js?v=2";
+import { ReplayEngine } from "./replayEngine.js?v=2";
+import { NoeticRenderer } from "./renderer.js?v=2";
 
 const localId = `human-${Math.random().toString(36).slice(2, 8)}`;
 

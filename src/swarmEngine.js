@@ -2,7 +2,7 @@
 // Agents perceive human gestures directly and ride macro-waves so the terrain breathes organically
 // instead of exhibiting flat Brownian jitter.
 
-import { CONCEPT_POOLS, POLARITY_PAIRS, normalizeText } from "./i18n.js";
+import { CONCEPT_POOLS, POLARITY_PAIRS, normalizeText } from "./i18n.js?v=2";
 
 const ARCHETYPES = ["resonator", "dialectician", "bridger", "simplicity", "bifurcator"];
 

@@ -33,7 +33,8 @@ def check_files_and_bindings():
     for js_file in js_files:
         text = js_file.read_text(encoding="utf-8")
         for names, imp in re.findall(r'import\s+\{([^}]+)\}\s+from\s+"(\.[^"]+)"', text):
-            target = (js_file.parent / imp).resolve()
+            clean_imp = imp.split("?", 1)[0]
+            target = (js_file.parent / clean_imp).resolve()
             assert target.exists(), f"Broken import {imp} in {js_file.name}"
             target_text = target.read_text(encoding="utf-8")
             for sym in [n.strip().split(" as ")[0].strip() for n in names.split(",") if n.strip()]:
