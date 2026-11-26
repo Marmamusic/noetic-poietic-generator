@@ -167,7 +167,7 @@ export class PalimpsestEngine {
     return new Promise((resolve) => {
       try {
         if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7", import.meta.url), {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7b", import.meta.url), {
             type: "module",
           });
         }

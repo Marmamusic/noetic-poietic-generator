@@ -4,7 +4,7 @@ import { TRANSLATIONS } from "./i18n.js?v=7";
 import { SemanticEngine } from "./semanticEngine.js?v=7";
 import { TopologyEngine } from "./topologyEngine.js?v=7";
 import { MirrorEngine } from "./mirrorEngine.js?v=7";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=7";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=7b";
 import { SwarmEngine } from "./swarmEngine.js?v=7";
 import { SyncEngine } from "./syncEngine.js?v=7";
 import { ReplayEngine } from "./replayEngine.js?v=7";
@@ -1043,8 +1043,8 @@ function renderInspector() {
 
     const renderList = (items, isTension) =>
       items.length === 0
-        ? `<span style="color:var(--text-muted)">${ins.noLinks}</span>`
-        : `<div class="prov-list">${items
+        ? `<div style="color:var(--text-muted);margin-top:4px;">${ins.noLinks}</div>`
+        : `<div class="prov-list" style="margin-top:4px;">${items
             .slice(0, 5)
             .map(
               (it) => `

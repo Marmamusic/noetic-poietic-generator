@@ -73,23 +73,12 @@ async function initModel(modelId = "onnx-community/Qwen2.5-1.5B-Instruct") {
   };
 
   try {
-    // q4f16 is optimal for WebGPU Qwen2.5 models; fall back to q4 if needed
-    const preferredDtype = deviceToTry === "webgpu" ? "q4f16" : "q4";
-    try {
-      generator = await pipeline("text-generation", modelId, {
-        device: deviceToTry,
-        dtype: preferredDtype,
-        progress_callback: onProgress,
-      });
-    } catch {
-      fileTotals.clear();
-      fileLoaded.clear();
-      generator = await pipeline("text-generation", modelId, {
-        device: deviceToTry,
-        dtype: "q4",
-        progress_callback: onProgress,
-      });
-    }
+    // Use q4 across both WebGPU and WASM (q4f16 can produce FP16 overflow / garbled tokens on some WebGPU GPUs)
+    generator = await pipeline("text-generation", modelId, {
+      device: deviceToTry,
+      dtype: "q4",
+      progress_callback: onProgress,
+    });
     activeDevice = deviceToTry;
   } catch (gpuErr) {
     if (deviceToTry === "webgpu") {

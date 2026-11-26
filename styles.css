@@ -246,7 +246,7 @@ body.mode-palimpsest #noetic-canvas {
   left: 50%;
   transform: translate(-50%, -53%);
   width: min(740px, calc(100vw - 48px));
-  max-height: calc(100vh - 250px);
+  max-height: calc(100vh - 300px);
   padding: 26px 34px 20px;
   border-radius: 24px;
   background: radial-gradient(
