@@ -1,10 +1,10 @@
 // Main Orchestrator for the Noetic Poietic Generator (v7 — Noetic Entropy, 2-Pass Streaming LLM & Clean Solo Start)
 
-import { TRANSLATIONS } from "./i18n.js?v=7";
+import { TRANSLATIONS } from "./i18n.js?v=7d";
 import { SemanticEngine } from "./semanticEngine.js?v=7";
 import { TopologyEngine } from "./topologyEngine.js?v=7";
 import { MirrorEngine } from "./mirrorEngine.js?v=7";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=7c";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=7d";
 import { SwarmEngine } from "./swarmEngine.js?v=7";
 import { SyncEngine } from "./syncEngine.js?v=7";
 import { ReplayEngine } from "./replayEngine.js?v=7";
@@ -876,8 +876,8 @@ async function awakenBrowserLLM(presetId = "browser15") {
   }
 }
 
-el.btnAwakenBrowserLlm.addEventListener("click", () => awakenBrowserLLM("browser15"));
-el.btnAwakenBrowser05.addEventListener("click", () => awakenBrowserLLM("browser05"));
+el.btnAwakenBrowserLlm.addEventListener("click", () => awakenBrowserLLM("browser05"));
+el.btnAwakenBrowser05.addEventListener("click", () => awakenBrowserLLM("browser15"));
 
 function selectPresetUI(presetId) {
   const p = palimpsest.applyPreset(presetId);
@@ -924,7 +924,7 @@ function syncLlmFormToEngine() {
 }
 
 function restoreSavedLlmConfig() {
-  selectPresetUI("browser15");
+  selectPresetUI("browser05");
   const raw = localStorage.getItem("npg_llm_cfg") || sessionStorage.getItem("npg_llm_cfg");
   if (!raw) return;
   try {

@@ -125,16 +125,10 @@ async function initModel(requestedModelId = MODEL_15B) {
     return { pipe, device, targetModel };
   };
 
-  // Ordered fallback ladder so browser memory limits NEVER crash into raw pointers
+  // Single-model attempt per clean Worker (if 1.5B OOMs, parent terminates this Worker and spawns a fresh 0.5B Worker!)
   const attempts = [];
-  if (modelId === MODEL_15B) {
-    if (gpu.available) attempts.push([MODEL_15B, "webgpu"]);
-    attempts.push([MODEL_05B, gpu.available ? "webgpu" : "wasm"]);
-    if (gpu.available) attempts.push([MODEL_05B, "wasm"]);
-  } else {
-    if (gpu.available) attempts.push([modelId, "webgpu"]);
-    attempts.push([modelId, "wasm"]);
-  }
+  if (gpu.available) attempts.push([modelId, "webgpu"]);
+  attempts.push([modelId, "wasm"]);
 
   let lastErr = null;
   for (let i = 0; i < attempts.length; i++) {

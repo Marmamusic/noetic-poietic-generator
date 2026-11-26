@@ -7,7 +7,7 @@
 // - Strict meta-preamble filtering + automatic retry on empty output
 
 import { cosineSimilarity } from "./semanticEngine.js?v=7";
-import { normalizeText } from "./i18n.js?v=7";
+import { normalizeText } from "./i18n.js?v=7d";
 
 export const LLM_PRESETS = {
   browser15: {
@@ -100,11 +100,11 @@ export class PalimpsestEngine {
     this._inFlight = false;
 
     this.llmEnabled = false;
-    this.providerId = "browser15";
+    this.providerId = "browser05";
     this.config = {
-      protocol: LLM_PRESETS.browser15.protocol,
-      endpoint: LLM_PRESETS.browser15.endpoint,
-      model: LLM_PRESETS.browser15.model,
+      protocol: LLM_PRESETS.browser05.protocol,
+      endpoint: LLM_PRESETS.browser05.endpoint,
+      model: LLM_PRESETS.browser05.model,
       apiKey: "",
     };
 
@@ -131,14 +131,25 @@ export class PalimpsestEngine {
     return p;
   }
 
+  _resetWorker() {
+    if (this._worker) {
+      try { this._worker.terminate(); } catch { /* noop */ }
+      this._worker = null;
+    }
+    for (const entry of this._pendingWorkerReqs.values()) {
+      entry.reject(new Error("Worker reset"));
+    }
+    this._pendingWorkerReqs.clear();
+  }
+
   async initBrowserLLM(lang = "fr", presetId = null) {
     if (presetId && LLM_PRESETS[presetId]) {
       this.applyPreset(presetId);
     } else if (this.config.protocol !== "browser") {
-      this.applyPreset("browser15");
+      this.applyPreset("browser05");
     }
 
-    const targetModel = this.config.model || LLM_PRESETS.browser15.model;
+    const targetModel = this.config.model || LLM_PRESETS.browser05.model;
     const shortName = targetModel.includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B";
 
     if (this.browserLlmState === "ready" && this._worker && this.browserLlmModelLoaded === targetModel) {
@@ -154,6 +165,11 @@ export class PalimpsestEngine {
 
     if (this.browserLlmState === "loading") return false;
 
+    // Always terminate any prior errored/different-model worker so WASM/WebGPU memory starts 100% clean!
+    if (this.browserLlmState === "error" || (this.browserLlmModelLoaded && this.browserLlmModelLoaded !== targetModel)) {
+      this._resetWorker();
+    }
+
     this.browserLlmState = "loading";
     this.browserLlmProgress = 1;
     this._emitStatus(
@@ -164,13 +180,35 @@ export class PalimpsestEngine {
     );
     this._notifyChange();
 
+    const ok = await this._spawnAndLoadWorker(targetModel, lang);
+    if (ok) return true;
+
+    // If 1.5B OOMed, terminate the poisoned Worker completely and retry 0.5B in a brand-new Worker!
+    if (targetModel.includes("1.5B")) {
+      this._resetWorker();
+      this.applyPreset("browser05");
+      this.browserLlmState = "loading";
+      this.browserLlmProgress = 2;
+      this._emitStatus(
+        lang === "fr"
+          ? "Mémoire insuffisante pour 1.5B — relance propre sur Qwen2.5-0.5B…"
+          : "Memory limit hit for 1.5B — clean restart on Qwen2.5-0.5B…",
+        "loading"
+      );
+      this._notifyChange();
+      return this._spawnAndLoadWorker(LLM_PRESETS.browser05.model, lang);
+    }
+
+    return false;
+  }
+
+  _spawnAndLoadWorker(targetModel, lang = "fr") {
     return new Promise((resolve) => {
       try {
-        if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7c", import.meta.url), {
-            type: "module",
-          });
-        }
+        this._resetWorker();
+        this._worker = new Worker(new URL("./browserLlmWorker.js?v=7d", import.meta.url), {
+          type: "module",
+        });
 
         const handleInitMsg = (ev) => {
           const msg = ev.data || {};
@@ -179,11 +217,7 @@ export class PalimpsestEngine {
             const activeName = (msg.modelId || targetModel).includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B";
             const mbInfo = msg.totalMB > 10 ? ` · ${msg.loadedMB}/${msg.totalMB} MB` : "";
             const label =
-              msg.status === "stepdown-05b"
-                ? lang === "fr"
-                  ? "Mémoire GPU limitée pour 1.5B — bascule vers Qwen2.5-0.5B…"
-                  : "GPU buffer too small for 1.5B — switching to Qwen2.5-0.5B…"
-                : msg.status === "fallback-wasm"
+              msg.status === "fallback-wasm"
                 ? lang === "fr"
                   ? "WebGPU indisponible — bascule WASM…"
                   : "WebGPU unavailable — switching to WASM…"
@@ -216,6 +250,7 @@ export class PalimpsestEngine {
             resolve(true);
           } else if (msg.type === "error" && !msg.requestId) {
             this._worker.removeEventListener("message", handleInitMsg);
+            this._resetWorker();
             this.browserLlmState = "error";
             this._emitStatus(`Erreur LLM navigateur : ${msg.message}`, "error");
             this._notifyChange();
@@ -226,6 +261,7 @@ export class PalimpsestEngine {
         this._worker.addEventListener("message", handleInitMsg);
         this._worker.postMessage({ type: "init", modelId: targetModel });
       } catch (err) {
+        this._resetWorker();
         this.browserLlmState = "error";
         this._emitStatus(`Erreur Worker : ${err.message}`, "error");
         this._notifyChange();
