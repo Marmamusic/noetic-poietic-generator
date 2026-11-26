@@ -1,20 +1,46 @@
-// Dedicated ES-Module Web Worker for zero-key in-browser LLM inference (v7)
-// - Default: onnx-community/Qwen2.5-1.5B-Instruct (q4f16 WebGPU / q4 WASM) for coherent FR/EN
-// - Lightweight option: onnx-community/Qwen2.5-0.5B-Instruct
+// Dedicated ES-Module Web Worker for zero-key in-browser LLM inference (v7c)
+// - Checks WebGPU maxBufferSize & enforces single-threaded WASM (prevents multi-arena OOM)
+// - Automatically steps down from Qwen2.5-1.5B to Qwen2.5-0.5B (q4) if browser memory ceiling is hit
+// - Uses clean q4 dtype across WebGPU & WASM (avoids WebGPU FP16 garbled token overflow)
 // - Live token streaming via TextStreamer + automatic retry on empty output
+
+const MODEL_15B = "onnx-community/Qwen2.5-1.5B-Instruct";
+const MODEL_05B = "onnx-community/Qwen2.5-0.5B-Instruct";
 
 let generator = null;
 let loadedModelId = null;
 let activeDevice = null;
 let TextStreamerCtor = null;
 
-async function initModel(modelId = "onnx-community/Qwen2.5-1.5B-Instruct") {
-  if (generator && loadedModelId === modelId) {
-    self.postMessage({ type: "ready", device: activeDevice, modelId });
+function formatRuntimeError(err) {
+  if (typeof err === "number" || /^\d{6,}$/.test(String(err?.message ?? err ?? ""))) {
+    return "Mémoire navigateur (WebGPU/WASM) insuffisante pour ce modèle — utilisez 0.5B ou Gemini/Groq gratuit";
+  }
+  return err?.message || String(err);
+}
+
+async function detectWebGPULimits() {
+  if (typeof navigator === "undefined" || !("gpu" in navigator)) {
+    return { available: false, maxBufferSize: 0 };
+  }
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return { available: false, maxBufferSize: 0 };
+    return {
+      available: true,
+      maxBufferSize: adapter.limits?.maxBufferSize || 268435456,
+    };
+  } catch {
+    return { available: false, maxBufferSize: 0 };
+  }
+}
+
+async function initModel(requestedModelId = MODEL_15B) {
+  if (generator && loadedModelId === requestedModelId) {
+    self.postMessage({ type: "ready", device: activeDevice, modelId: loadedModelId });
     return;
   }
 
-  // Dispose old pipeline if switching models
   if (generator && typeof generator.dispose === "function") {
     try { await generator.dispose(); } catch { /* noop */ }
   }
@@ -29,75 +55,114 @@ async function initModel(modelId = "onnx-community/Qwen2.5-1.5B-Instruct") {
   env.allowLocalModels = false;
   env.useBrowserCache = true;
 
-  const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
-  let deviceToTry = hasWebGPU ? "webgpu" : "wasm";
+  // Prevent multi-threaded WASM BFCArena memory spikes that trigger OOM pointers (e.g. 3587054648)
+  if (env.backends?.onnx?.wasm) {
+    env.backends.onnx.wasm.numThreads = 1;
+  }
 
-  const fileTotals = new Map();
-  const fileLoaded = new Map();
-  let lastEmit = 0;
+  const gpu = await detectWebGPULimits();
+  let modelId = requestedModelId;
 
-  const onProgress = (info) => {
-    if (!info) return;
-    const file = info.file || "model";
-    if (typeof info.total === "number" && info.total > 0) {
-      fileTotals.set(file, info.total);
-    }
-    if (typeof info.loaded === "number" && info.loaded >= 0) {
-      fileLoaded.set(file, info.loaded);
-    } else if (info.status === "done" && fileTotals.has(file)) {
-      fileLoaded.set(file, fileTotals.get(file));
-    }
-
-    let totalBytes = 0;
-    let loadedBytes = 0;
-    for (const [f, tot] of fileTotals.entries()) {
-      totalBytes += tot;
-      loadedBytes += Math.min(tot, fileLoaded.get(f) || 0);
-    }
-
-    const now = performance.now();
-    if (now - lastEmit < 140 && info.status === "progress") return;
-    lastEmit = now;
-
-    const rawPct = totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 99) : 3;
-    const isCompiling = totalBytes > 50_000_000 && loadedBytes >= totalBytes * 0.995;
-
+  // Qwen2.5-1.5B q4 ONNX weighs ~1.1GB; if WebGPU maxBufferSize is too small, step down proactively to 0.5B
+  if (modelId === MODEL_15B && gpu.available && gpu.maxBufferSize < 1_050_000_000) {
+    modelId = MODEL_05B;
     self.postMessage({
       type: "progress",
-      status: isCompiling ? "compiling" : "downloading",
-      progress: Math.max(1, Math.min(99, rawPct)),
-      loadedMB: Math.round(loadedBytes / (1024 * 1024)),
-      totalMB: Math.round(totalBytes / (1024 * 1024)),
-      file,
+      status: "stepdown-05b",
+      progress: 3,
+      loadedMB: 0,
+      totalMB: 0,
     });
-  };
+  }
 
-  try {
-    // Use q4 across both WebGPU and WASM (q4f16 can produce FP16 overflow / garbled tokens on some WebGPU GPUs)
-    generator = await pipeline("text-generation", modelId, {
-      device: deviceToTry,
+  const loadAttempt = async (targetModel, device) => {
+    const fileTotals = new Map();
+    const fileLoaded = new Map();
+    let lastEmit = 0;
+
+    const onProgress = (info) => {
+      if (!info) return;
+      const file = info.file || "model";
+      if (typeof info.total === "number" && info.total > 0) {
+        fileTotals.set(file, info.total);
+      }
+      if (typeof info.loaded === "number" && info.loaded >= 0) {
+        fileLoaded.set(file, info.loaded);
+      } else if (info.status === "done" && fileTotals.has(file)) {
+        fileLoaded.set(file, fileTotals.get(file));
+      }
+
+      let totalBytes = 0;
+      let loadedBytes = 0;
+      for (const [f, tot] of fileTotals.entries()) {
+        totalBytes += tot;
+        loadedBytes += Math.min(tot, fileLoaded.get(f) || 0);
+      }
+
+      const now = performance.now();
+      if (now - lastEmit < 140 && info.status === "progress") return;
+      lastEmit = now;
+
+      const rawPct = totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 99) : 3;
+      const isCompiling = totalBytes > 50_000_000 && loadedBytes >= totalBytes * 0.995;
+
+      self.postMessage({
+        type: "progress",
+        status: isCompiling ? "compiling" : "downloading",
+        progress: Math.max(1, Math.min(99, rawPct)),
+        loadedMB: Math.round(loadedBytes / (1024 * 1024)),
+        totalMB: Math.round(totalBytes / (1024 * 1024)),
+        modelId: targetModel,
+        file,
+      });
+    };
+
+    const pipe = await pipeline("text-generation", targetModel, {
+      device,
       dtype: "q4",
       progress_callback: onProgress,
     });
-    activeDevice = deviceToTry;
-  } catch (gpuErr) {
-    if (deviceToTry === "webgpu") {
-      fileTotals.clear();
-      fileLoaded.clear();
-      self.postMessage({ type: "progress", status: "fallback-wasm", progress: 5, loadedMB: 0, totalMB: 0 });
-      generator = await pipeline("text-generation", modelId, {
-        device: "wasm",
-        dtype: "q4",
-        progress_callback: onProgress,
+    return { pipe, device, targetModel };
+  };
+
+  // Ordered fallback ladder so browser memory limits NEVER crash into raw pointers
+  const attempts = [];
+  if (modelId === MODEL_15B) {
+    if (gpu.available) attempts.push([MODEL_15B, "webgpu"]);
+    attempts.push([MODEL_05B, gpu.available ? "webgpu" : "wasm"]);
+    if (gpu.available) attempts.push([MODEL_05B, "wasm"]);
+  } else {
+    if (gpu.available) attempts.push([modelId, "webgpu"]);
+    attempts.push([modelId, "wasm"]);
+  }
+
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const [mId, dev] = attempts[i];
+    if (i > 0) {
+      self.postMessage({
+        type: "progress",
+        status: mId === MODEL_05B && requestedModelId === MODEL_15B ? "stepdown-05b" : "fallback-wasm",
+        progress: 4,
+        loadedMB: 0,
+        totalMB: 0,
+        modelId: mId,
       });
-      activeDevice = "wasm";
-    } else {
-      throw gpuErr;
+    }
+    try {
+      const res = await loadAttempt(mId, dev);
+      generator = res.pipe;
+      activeDevice = res.device;
+      loadedModelId = res.targetModel;
+      self.postMessage({ type: "ready", device: activeDevice, modelId: loadedModelId });
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Browser LLM attempt [${mId} / ${dev}] failed:`, err);
     }
   }
 
-  loadedModelId = modelId;
-  self.postMessage({ type: "ready", device: activeDevice, modelId });
+  throw new Error(formatRuntimeError(lastErr));
 }
 
 async function runSingleGen(messages, { maxNewTokens, temperature, repetitionPenalty, stream, requestId }) {
@@ -147,7 +212,6 @@ async function generateText({ requestId, messages, maxNewTokens = 110, temperatu
     throw new Error("Browser LLM not initialized");
   }
 
-  // Primary attempt (gentle repetition_penalty avoids premature EOS on Pass 2!)
   let text = await runSingleGen(messages, {
     maxNewTokens,
     temperature,
@@ -156,7 +220,6 @@ async function generateText({ requestId, messages, maxNewTokens = 110, temperatu
     requestId,
   });
 
-  // Automatic clean retry if model emitted empty EOS on first try
   if (!text || text.length < 6) {
     text = await runSingleGen(messages, {
       maxNewTokens,
@@ -182,7 +245,7 @@ self.addEventListener("message", async (ev) => {
     self.postMessage({
       type: "error",
       requestId: msg.requestId || null,
-      message: err?.message || String(err),
+      message: formatRuntimeError(err),
     });
   }
 });

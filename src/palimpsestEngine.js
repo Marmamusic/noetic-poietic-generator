@@ -167,7 +167,7 @@ export class PalimpsestEngine {
     return new Promise((resolve) => {
       try {
         if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7b", import.meta.url), {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7c", import.meta.url), {
             type: "module",
           });
         }
@@ -176,19 +176,24 @@ export class PalimpsestEngine {
           const msg = ev.data || {};
           if (msg.type === "progress") {
             this.browserLlmProgress = msg.progress || 1;
+            const activeName = (msg.modelId || targetModel).includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B";
             const mbInfo = msg.totalMB > 10 ? ` · ${msg.loadedMB}/${msg.totalMB} MB` : "";
             const label =
-              msg.status === "fallback-wasm"
+              msg.status === "stepdown-05b"
+                ? lang === "fr"
+                  ? "Mémoire GPU limitée pour 1.5B — bascule vers Qwen2.5-0.5B…"
+                  : "GPU buffer too small for 1.5B — switching to Qwen2.5-0.5B…"
+                : msg.status === "fallback-wasm"
                 ? lang === "fr"
                   ? "WebGPU indisponible — bascule WASM…"
                   : "WebGPU unavailable — switching to WASM…"
                 : msg.status === "compiling"
                 ? lang === "fr"
-                  ? `Compilation de ${shortName} en mémoire…`
-                  : `Compiling ${shortName} into memory…`
+                  ? `Compilation de ${activeName} en mémoire…`
+                  : `Compiling ${activeName} into memory…`
                 : lang === "fr"
-                ? `Téléchargement ${shortName} (${this.browserLlmProgress}%${mbInfo})…`
-                : `Downloading ${shortName} (${this.browserLlmProgress}%${mbInfo})…`;
+                ? `Téléchargement ${activeName} (${this.browserLlmProgress}%${mbInfo})…`
+                : `Downloading ${activeName} (${this.browserLlmProgress}%${mbInfo})…`;
             this._emitStatus(label, "loading");
             this._notifyChange();
           } else if (msg.type === "ready") {
@@ -196,13 +201,15 @@ export class PalimpsestEngine {
             this._attachWorkerListener();
             this.browserLlmState = "ready";
             this.browserLlmModelLoaded = msg.modelId || targetModel;
+            this.config.model = this.browserLlmModelLoaded;
+            const loadedShort = this.browserLlmModelLoaded.includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B";
             this.browserLlmProgress = 100;
             this.browserLlmDevice = msg.device || "webgpu";
             this.llmEnabled = true;
             this._emitStatus(
               lang === "fr"
-                ? `LLM actif · ${shortName} (${this.browserLlmDevice})`
-                : `LLM active · ${shortName} (${this.browserLlmDevice})`,
+                ? `LLM actif · ${loadedShort} (${this.browserLlmDevice})`
+                : `LLM active · ${loadedShort} (${this.browserLlmDevice})`,
               "ready"
             );
             this._notifyChange();
