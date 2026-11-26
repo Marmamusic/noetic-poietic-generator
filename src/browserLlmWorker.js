@@ -1,26 +1,37 @@
-// Dedicated ES-Module Web Worker for zero-key in-browser LLM inference
-// Runs onnx-community/Qwen2.5-0.5B-Instruct (4-bit quantized, multilingual FR/EN)
-// via @huggingface/transformers v3 using WebGPU when available, falling back cleanly to WASM.
+// Dedicated ES-Module Web Worker for zero-key in-browser LLM inference (v7)
+// - Default: onnx-community/Qwen2.5-1.5B-Instruct (q4f16 WebGPU / q4 WASM) for coherent FR/EN
+// - Lightweight option: onnx-community/Qwen2.5-0.5B-Instruct
+// - Live token streaming via TextStreamer + automatic retry on empty output
 
 let generator = null;
+let loadedModelId = null;
 let activeDevice = null;
+let TextStreamerCtor = null;
 
-async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
-  if (generator) {
+async function initModel(modelId = "onnx-community/Qwen2.5-1.5B-Instruct") {
+  if (generator && loadedModelId === modelId) {
     self.postMessage({ type: "ready", device: activeDevice, modelId });
     return;
   }
 
+  // Dispose old pipeline if switching models
+  if (generator && typeof generator.dispose === "function") {
+    try { await generator.dispose(); } catch { /* noop */ }
+  }
+  generator = null;
+  loadedModelId = null;
+
   self.postMessage({ type: "progress", status: "loading", progress: 1, loadedMB: 0, totalMB: 0 });
 
-  const { pipeline, env } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1");
+  const transformers = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.1");
+  const { pipeline, env, TextStreamer } = transformers;
+  TextStreamerCtor = TextStreamer;
   env.allowLocalModels = false;
   env.useBrowserCache = true;
 
   const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
   let deviceToTry = hasWebGPU ? "webgpu" : "wasm";
 
-  // Track cumulative bytes across all downloaded files (config, tokenizer, and the large .onnx weights)
   const fileTotals = new Map();
   const fileLoaded = new Map();
   let lastEmit = 0;
@@ -45,10 +56,9 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
     }
 
     const now = performance.now();
-    if (now - lastEmit < 120 && info.status === "progress") return;
+    if (now - lastEmit < 140 && info.status === "progress") return;
     lastEmit = now;
 
-    // Only report 99% max during download so 100% means compiled & ready
     const rawPct = totalBytes > 0 ? Math.round((loadedBytes / totalBytes) * 99) : 3;
     const isCompiling = totalBytes > 50_000_000 && loadedBytes >= totalBytes * 0.995;
 
@@ -63,11 +73,23 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
   };
 
   try {
-    generator = await pipeline("text-generation", modelId, {
-      device: deviceToTry,
-      dtype: "q4",
-      progress_callback: onProgress,
-    });
+    // q4f16 is optimal for WebGPU Qwen2.5 models; fall back to q4 if needed
+    const preferredDtype = deviceToTry === "webgpu" ? "q4f16" : "q4";
+    try {
+      generator = await pipeline("text-generation", modelId, {
+        device: deviceToTry,
+        dtype: preferredDtype,
+        progress_callback: onProgress,
+      });
+    } catch {
+      fileTotals.clear();
+      fileLoaded.clear();
+      generator = await pipeline("text-generation", modelId, {
+        device: deviceToTry,
+        dtype: "q4",
+        progress_callback: onProgress,
+      });
+    }
     activeDevice = deviceToTry;
   } catch (gpuErr) {
     if (deviceToTry === "webgpu") {
@@ -85,20 +107,38 @@ async function initModel(modelId = "onnx-community/Qwen2.5-0.5B-Instruct") {
     }
   }
 
+  loadedModelId = modelId;
   self.postMessage({ type: "ready", device: activeDevice, modelId });
 }
 
-async function generateText({ requestId, messages, maxNewTokens = 160, temperature = 0.85 }) {
-  if (!generator) {
-    throw new Error("Browser LLM not initialized");
+async function runSingleGen(messages, { maxNewTokens, temperature, repetitionPenalty, stream, requestId }) {
+  let streamedBuffer = "";
+  let streamer = undefined;
+
+  if (stream && TextStreamerCtor && generator.tokenizer) {
+    streamer = new TextStreamerCtor(generator.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: (tokenText) => {
+        if (!tokenText) return;
+        streamedBuffer += tokenText;
+        self.postMessage({
+          type: "token",
+          requestId,
+          delta: tokenText,
+          fullText: streamedBuffer,
+        });
+      },
+    });
   }
 
   const output = await generator(messages, {
     max_new_tokens: maxNewTokens,
-    do_sample: true,
-    temperature,
-    top_p: 0.92,
-    repetition_penalty: 1.12,
+    do_sample: temperature > 0.05,
+    temperature: Math.max(0.1, temperature),
+    top_p: 0.9,
+    repetition_penalty: repetitionPenalty,
+    streamer,
   });
 
   const generated = output?.[0]?.generated_text;
@@ -110,7 +150,35 @@ async function generateText({ requestId, messages, maxNewTokens = 160, temperatu
     text = generated;
   }
 
-  self.postMessage({ type: "result", requestId, text: String(text || "").trim() });
+  return String(text || streamedBuffer || "").trim();
+}
+
+async function generateText({ requestId, messages, maxNewTokens = 110, temperature = 0.78, stream = false }) {
+  if (!generator) {
+    throw new Error("Browser LLM not initialized");
+  }
+
+  // Primary attempt (gentle repetition_penalty avoids premature EOS on Pass 2!)
+  let text = await runSingleGen(messages, {
+    maxNewTokens,
+    temperature,
+    repetitionPenalty: 1.05,
+    stream,
+    requestId,
+  });
+
+  // Automatic clean retry if model emitted empty EOS on first try
+  if (!text || text.length < 6) {
+    text = await runSingleGen(messages, {
+      maxNewTokens,
+      temperature: 0.62,
+      repetitionPenalty: 1.0,
+      stream,
+      requestId,
+    });
+  }
+
+  self.postMessage({ type: "result", requestId, text });
 }
 
 self.addEventListener("message", async (ev) => {

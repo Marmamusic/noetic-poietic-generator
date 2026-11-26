@@ -1,7 +1,7 @@
 // Layer 2 (v2): Live 2D PCA Semantic Compass, Continuous Potential-Guided Physics,
 // Edge-to-Edge Auber Spiral Mosaic, Conviction Weighting, Ghost Preview & Telemetry
 
-import { AXIS_COUNT } from "./semanticEngine.js?v=6";
+import { AXIS_COUNT } from "./semanticEngine.js?v=7";
 
 /**
  * Exact Ulam / Olivier Auber square spiral coordinates (index 0 at center).
@@ -50,6 +50,9 @@ export class TopologyEngine {
     this.clusters = [];
     this.ripples = [];
     this.llmLinks = new Map(); // normalized "termA|termB" -> { termA, termB, type, reason, weight, bornAt }
+    this.maxActiveWords = 12; // Noetic entropy capacity: oldest word gently dissolves when exceeded
+    this.dissolveDurationMs = 2400;
+    this.onCellDissolved = null;
     this.topologyMode = "manifold"; // "manifold" | "spiral"
     this.topologyBlend = 0; // 0 = continuous terrain manifold, 1 = touching Auber spiral mosaic
 
@@ -103,6 +106,9 @@ export class TopologyEngine {
       existing.axisVec = axisVec;
       existing.hue = hue;
       existing.updatedAt = now;
+      existing.touchedAt = now;
+      existing.dissolvingSince = null;
+      existing.alpha = 1;
       existing.isHuman = isHuman;
       existing.isLocal = isLocal;
       if (archetype) existing.archetype = archetype;
@@ -150,15 +156,67 @@ export class TopologyEngine {
       clusterId: -1,
       llmGravity: 0,
       lastLeverage: 0,
+      createdAt: now,
+      touchedAt: now,
       updatedAt: now,
+      dissolvingSince: null,
+      alpha: 1,
     };
 
     this.cells.set(id, cell);
+    this.enforceNoeticEntropy();
     this.reindexSpiral();
     const leverage = this.recomputeGraph(id);
     cell.lastLeverage = leverage;
     if (isHuman) this.emitRipple(cell, Math.max(0.25, leverage));
     return leverage;
+  }
+
+  /**
+   * Noetic Entropy: once active human/collective cells exceed maxActiveWords,
+   * the oldest untouched word gently enters dissolution (2.4s fade) to keep the map clean and generative.
+   */
+  enforceNoeticEntropy() {
+    const active = Array.from(this.cells.values())
+      .filter((c) => !c.dissolvingSince)
+      .sort((a, b) => (a.touchedAt || a.createdAt || 0) - (b.touchedAt || b.createdAt || 0));
+
+    const excess = active.length - this.maxActiveWords;
+    if (excess <= 0) return;
+
+    const now = performance.now();
+    for (let i = 0; i < excess; i++) {
+      active[i].dissolvingSince = now;
+    }
+  }
+
+  /**
+   * Advances smooth dissolution of entropically expiring cells and prunes completed ones.
+   */
+  tickDissolution(now) {
+    let removedAny = false;
+    const removedIds = [];
+    for (const [id, c] of this.cells.entries()) {
+      if (!c.dissolvingSince) {
+        c.alpha = 1;
+        continue;
+      }
+      const p = (now - c.dissolvingSince) / this.dissolveDurationMs;
+      if (p >= 1) {
+        this.cells.delete(id);
+        removedIds.push(id);
+        removedAny = true;
+      } else {
+        c.alpha = Math.max(0.02, 1 - p);
+      }
+    }
+    if (removedAny) {
+      this.reindexSpiral();
+      this.recomputeGraph(null);
+      if (this.onCellDissolved) {
+        for (const id of removedIds) this.onCellDissolved(id);
+      }
+    }
   }
 
   removeCell(id) {
@@ -728,6 +786,7 @@ export class TopologyEngine {
    * Advances PCA-guided terrain physics & smooth Manifold ↔ Touching Auber Mosaic morphing.
    */
   stepPhysics(dt = 0.016) {
+    this.tickDissolution(performance.now());
     const targetBlend = this.topologyMode === "spiral" ? 1 : 0;
     this.topologyBlend += (targetBlend - this.topologyBlend) * Math.min(1, dt * 6.0);
 

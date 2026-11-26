@@ -1,14 +1,14 @@
-// Main Orchestrator for the Noetic Poietic Generator (v6 — Blank Tabula-Rasa Start & Multi-Voice Entry)
+// Main Orchestrator for the Noetic Poietic Generator (v7 — Noetic Entropy, 2-Pass Streaming LLM & Clean Solo Start)
 
-import { TRANSLATIONS } from "./i18n.js?v=6";
-import { SemanticEngine } from "./semanticEngine.js?v=6";
-import { TopologyEngine } from "./topologyEngine.js?v=6";
-import { MirrorEngine } from "./mirrorEngine.js?v=6";
-import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=6";
-import { SwarmEngine } from "./swarmEngine.js?v=6";
-import { SyncEngine } from "./syncEngine.js?v=6";
-import { ReplayEngine } from "./replayEngine.js?v=6";
-import { NoeticRenderer } from "./renderer.js?v=6";
+import { TRANSLATIONS } from "./i18n.js?v=7";
+import { SemanticEngine } from "./semanticEngine.js?v=7";
+import { TopologyEngine } from "./topologyEngine.js?v=7";
+import { MirrorEngine } from "./mirrorEngine.js?v=7";
+import { PalimpsestEngine, LLM_PRESETS } from "./palimpsestEngine.js?v=7";
+import { SwarmEngine } from "./swarmEngine.js?v=7";
+import { SyncEngine } from "./syncEngine.js?v=7";
+import { ReplayEngine } from "./replayEngine.js?v=7";
+import { NoeticRenderer } from "./renderer.js?v=7";
 
 const sessionId = `human-${Math.random().toString(36).slice(2, 7)}`;
 let voiceSeq = 0;
@@ -52,11 +52,13 @@ const el = {
   palOnboarding: document.getElementById("pal-onboarding"),
   palCloudPreview: document.getElementById("pal-cloud-preview"),
   btnAwakenBrowserLlm: document.getElementById("btn-awaken-browser-llm"),
+  btnAwakenBrowser05: document.getElementById("btn-awaken-browser-05"),
   btnOpenExternalLlm: document.getElementById("btn-open-external-llm"),
   palProgressWrap: document.getElementById("pal-progress-wrap"),
   palProgressFill: document.getElementById("pal-progress-fill"),
   palProgressText: document.getElementById("pal-progress-text"),
   palStream: document.getElementById("pal-stream"),
+  palStreaming: document.getElementById("pal-streaming"),
   palGestation: document.getElementById("pal-gestation"),
   palLlmLed: document.getElementById("pal-llm-led"),
   palEngineStatus: document.getElementById("pal-engine-status"),
@@ -86,10 +88,13 @@ const el = {
   labelSwarmVal: document.getElementById("label-swarm-val"),
   sliderTempo: document.getElementById("slider-tempo"),
   labelTempoVal: document.getElementById("label-tempo-val"),
+  sliderCapacity: document.getElementById("slider-capacity"),
+  labelCapacityVal: document.getElementById("label-capacity-val"),
   btnSwarmPause: document.getElementById("btn-swarm-pause"),
   btnSwarmPulse: document.getElementById("btn-swarm-pulse"),
   btnRoomPanel: document.getElementById("btn-room-panel"),
   roomBadge: document.getElementById("room-badge"),
+  checkTabSync: document.getElementById("check-tab-sync"),
   inputRoomCode: document.getElementById("input-room-code"),
   btnRoomJoin: document.getElementById("btn-room-join"),
   btnRoomCreate: document.getElementById("btn-room-create"),
@@ -217,7 +222,10 @@ function renderVoicesBar() {
     const cell = topology.cells.get(id);
     if (!cell) continue;
     const chip = document.createElement("span");
-    chip.className = `voice-chip${editingVoiceId === id ? " editing" : ""}`;
+    const cls = ["voice-chip"];
+    if (editingVoiceId === id) cls.push("editing");
+    if (cell.dissolvingSince) cls.push("dissolving");
+    chip.className = cls.join(" ");
     chip.title = "Click to edit this voice";
 
     const labelSpan = document.createElement("span");
@@ -258,6 +266,12 @@ function renderVoicesBar() {
     el.voicesBar.appendChild(chip);
   }
 
+  const activeCount = Array.from(topology.cells.values()).filter((c) => !c.dissolvingSince).length;
+  const capBadge = document.createElement("span");
+  capBadge.className = "voice-capacity";
+  capBadge.textContent = `${activeCount}/${topology.maxActiveWords}`;
+  el.voicesBar.appendChild(capBadge);
+
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
   clearBtn.className = "voice-clear-btn";
@@ -265,6 +279,17 @@ function renderVoicesBar() {
   clearBtn.addEventListener("click", clearAllLocalVoices);
   el.voicesBar.appendChild(clearBtn);
 }
+
+topology.onCellDissolved = (id) => {
+  localVoiceIds = localVoiceIds.filter((vid) => vid !== id);
+  if (editingVoiceId === id) {
+    editingVoiceId = null;
+    el.inputConcept.value = "";
+  }
+  renderVoicesBar();
+  renderCloudPreview();
+  updateTelemetryUI(topology.telemetry);
+};
 
 function removeLocalVoice(id) {
   localVoiceIds = localVoiceIds.filter((vid) => vid !== id);
@@ -338,6 +363,7 @@ function renderLlmLinksStrip(links = []) {
 function renderPalimpsestDOM(sentences, meta = {}) {
   const {
     isGestating = false,
+    llmEnabled = palimpsest.llmEnabled,
     llmLinks = palimpsest.activeLlmLinks,
     browserLlmState = palimpsest.browserLlmState,
     browserLlmProgress = palimpsest.browserLlmProgress,
@@ -345,15 +371,18 @@ function renderPalimpsestDOM(sentences, meta = {}) {
   el.palGestation.classList.toggle("hidden", !isGestating);
 
   const hasSentences = sentences && sentences.length > 0;
-  el.palOnboarding.classList.toggle("hidden", hasSentences);
+  const hasStream = Boolean(palimpsest.streamingDraft && palimpsest.streamingDraft.trim());
+  const hideOnboarding = hasSentences || hasStream || (llmEnabled && isGestating);
+  el.palOnboarding.classList.toggle("hidden", hideOnboarding);
   el.palStream.classList.toggle("hidden", !hasSentences);
-  renderLlmLinksStrip(hasSentences ? llmLinks : []);
+  renderLlmLinksStrip(hasSentences || (llmLinks && llmLinks.length > 0) ? llmLinks : []);
 
   if (!hasSentences) {
     renderCloudPreview();
     const isLoading = browserLlmState === "loading";
     el.palProgressWrap.classList.toggle("hidden", !isLoading);
     el.btnAwakenBrowserLlm.disabled = isLoading;
+    if (el.btnAwakenBrowser05) el.btnAwakenBrowser05.disabled = isLoading;
     if (isLoading) {
       el.palProgressFill.style.width = `${browserLlmProgress}%`;
       el.palProgressText.textContent = `${browserLlmProgress}%`;
@@ -443,6 +472,19 @@ function renderPalimpsestDOM(sentences, meta = {}) {
 palimpsest.onChange = (sentences, meta) => {
   if (!replay.isScrubbing) {
     renderPalimpsestDOM(sentences, meta);
+  }
+};
+
+palimpsest.onStream = (partialText) => {
+  if (!el.palStreaming) return;
+  const clean = String(partialText || "").trim();
+  if (!clean) {
+    el.palStreaming.classList.add("hidden");
+    el.palStreaming.textContent = "";
+  } else {
+    el.palOnboarding.classList.add("hidden");
+    el.palStreaming.classList.remove("hidden");
+    el.palStreaming.textContent = clean;
   }
 };
 
@@ -742,6 +784,18 @@ el.sliderTempo.addEventListener("input", () => {
   swarm.tempo = val;
 });
 
+el.sliderCapacity.addEventListener("input", () => {
+  const val = Number(el.sliderCapacity.value);
+  el.labelCapacityVal.textContent = String(val);
+  topology.maxActiveWords = val;
+  topology.enforceNoeticEntropy();
+  renderVoicesBar();
+});
+
+el.checkTabSync.addEventListener("change", () => {
+  sync.setTabSync(el.checkTabSync.checked);
+});
+
 el.btnSwarmPause.addEventListener("click", () => {
   swarm.paused = !swarm.paused;
   el.btnSwarmPause.textContent = swarm.paused ? t().resume : t().pause;
@@ -811,9 +865,9 @@ el.btnOpenExternalLlm.addEventListener("click", () => {
   togglePopover("popover-llm");
 });
 
-async function awakenBrowserLLM() {
-  selectPresetUI("browser");
-  const ok = await palimpsest.initBrowserLLM(currentLang);
+async function awakenBrowserLLM(presetId = "browser15") {
+  selectPresetUI(presetId);
+  const ok = await palimpsest.initBrowserLLM(currentLang, presetId);
   if (ok) {
     el.btnLlmPanel.classList.add("active");
     el.btnLlmToggle.textContent = t().llmDisable;
@@ -822,7 +876,8 @@ async function awakenBrowserLLM() {
   }
 }
 
-el.btnAwakenBrowserLlm.addEventListener("click", awakenBrowserLLM);
+el.btnAwakenBrowserLlm.addEventListener("click", () => awakenBrowserLLM("browser15"));
+el.btnAwakenBrowser05.addEventListener("click", () => awakenBrowserLLM("browser05"));
 
 function selectPresetUI(presetId) {
   const p = palimpsest.applyPreset(presetId);
@@ -831,7 +886,7 @@ function selectPresetUI(presetId) {
   el.inputLlmModel.value = p.model;
   el.inputLlmKey.placeholder = p.keyPlaceholder;
 
-  const isBrowser = p.id === "browser";
+  const isBrowser = p.protocol === "browser";
   el.fieldLlmEndpoint.classList.toggle("hidden", isBrowser);
   el.fieldLlmKey.classList.toggle("hidden", isBrowser);
 }
@@ -847,7 +902,7 @@ el.sliderDelay.addEventListener("input", () => {
 });
 
 function syncLlmFormToEngine() {
-  const preset = LLM_PRESETS[palimpsest.providerId] || LLM_PRESETS.browser;
+  const preset = LLM_PRESETS[palimpsest.providerId] || LLM_PRESETS.browser15;
   palimpsest.config.protocol = preset.protocol;
   palimpsest.config.endpoint = el.inputLlmEndpoint.value.trim();
   palimpsest.config.model = el.inputLlmModel.value.trim();
@@ -869,16 +924,17 @@ function syncLlmFormToEngine() {
 }
 
 function restoreSavedLlmConfig() {
-  selectPresetUI("browser");
+  selectPresetUI("browser15");
   const raw = localStorage.getItem("npg_llm_cfg") || sessionStorage.getItem("npg_llm_cfg");
   if (!raw) return;
   try {
     const cfg = JSON.parse(raw);
-    if (cfg.providerId && LLM_PRESETS[cfg.providerId]) {
-      selectPresetUI(cfg.providerId);
+    const mappedId = cfg.providerId === "browser" ? "browser15" : cfg.providerId;
+    if (mappedId && LLM_PRESETS[mappedId]) {
+      selectPresetUI(mappedId);
     }
     if (cfg.endpoint) el.inputLlmEndpoint.value = cfg.endpoint;
-    if (cfg.model) el.inputLlmModel.value = cfg.model;
+    if (cfg.model && cfg.providerId !== "browser") el.inputLlmModel.value = cfg.model;
     if (cfg.apiKey) el.inputLlmKey.value = cfg.apiKey;
     if (typeof cfg.delaySec === "number") {
       el.sliderDelay.value = String(cfg.delaySec);
@@ -894,7 +950,7 @@ function restoreSavedLlmConfig() {
 el.btnLlmToggle.addEventListener("click", async () => {
   syncLlmFormToEngine();
   if (!palimpsest.llmEnabled && palimpsest.config.protocol === "browser") {
-    await awakenBrowserLLM();
+    await awakenBrowserLLM(palimpsest.providerId);
     return;
   }
 
@@ -916,7 +972,7 @@ el.btnLlmToggle.addEventListener("click", async () => {
 el.btnLlmTrigger.addEventListener("click", async () => {
   syncLlmFormToEngine();
   if (palimpsest.config.protocol === "browser" && palimpsest.browserLlmState !== "ready") {
-    await awakenBrowserLLM();
+    await awakenBrowserLLM(palimpsest.providerId);
     return;
   }
   palimpsest.llmEnabled = true;
@@ -943,11 +999,14 @@ el.modalHelp.addEventListener("click", (e) => {
 });
 
 // Anoptical Transparency Inspector
-el.btnCloseInspector.addEventListener("click", () => {
+function closeInspector() {
   selectedArtifact = null;
   renderer.selectedId = null;
   el.inspectorPanel.classList.add("hidden");
-});
+  document.body.classList.remove("inspector-open");
+}
+
+el.btnCloseInspector.addEventListener("click", closeInspector);
 
 function renderInspector() {
   if (!selectedArtifact) return;
@@ -997,15 +1056,17 @@ function renderInspector() {
             )
             .join("")}</div>`;
 
+    const stanceDisplay = (ins.stanceNames && ins.stanceNames[cell.stance]) || cell.stance;
     el.inspectorBody.innerHTML = `
-      <div class="prov-row"><span>Role</span><span class="mono">${escapeHtml(roleLabel)}</span></div>
-      <div class="prov-row"><span>${ins.stance}</span><span class="mono">${escapeHtml(cell.stance)}</span></div>
+      <div class="prov-row"><span>${escapeHtml(ins.roleLabel || "Role")}</span><span class="mono">${escapeHtml(roleLabel)}</span></div>
+      <div class="prov-row"><span>${ins.stance}</span><span class="mono">${escapeHtml(stanceDisplay)}</span></div>
       <div class="prov-row"><span>${ins.spiralIdx}</span><span class="mono">#${cell.spiralIndex} (${cell.gx}, ${cell.gy})</span></div>
       <div class="prov-row"><span>${ins.leverage}</span><span class="mono">ΔM ${(cell.lastLeverage || 0).toFixed(2)}</span></div>
       <div><strong>${ins.resonanceLinks}</strong>${renderList(resLinks, false)}</div>
       <div><strong>${ins.tensionLinks}</strong>${renderList(tenLinks, true)}</div>
     `;
     el.inspectorPanel.classList.remove("hidden");
+    document.body.classList.add("inspector-open");
     return;
   }
 
@@ -1124,9 +1185,7 @@ canvas.addEventListener("pointerup", (e) => {
       renderer.selectedId = hit.id;
       renderInspector();
     } else {
-      selectedArtifact = null;
-      renderer.selectedId = null;
-      el.inspectorPanel.classList.add("hidden");
+      closeInspector();
     }
   }
 });

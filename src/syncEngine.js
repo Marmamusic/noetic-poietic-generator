@@ -1,34 +1,48 @@
-// Zero-Server Collective Synchronization
-// 1. BroadcastChannel: instant multi-tab multiplayer on the same browser/device
-// 2. Optional WebRTC P2P Room Sync (via PeerJS CDN) for remote multiplayer on GitHub Pages without a backend
+// Zero-Server Collective Synchronization (v7)
+// - Isolated solo session by default (zero ghost word bleed from older tabs!)
+// - Opt-in BroadcastChannel multi-tab sync toggle
+// - Optional WebRTC P2P Room Sync (via PeerJS CDN) for remote multiplayer without a backend
 
-const CHANNEL_NAME = "noetic-poietic-generator-v1";
+const CHANNEL_NAME = "noetic-poietic-generator-v7";
 
 export class SyncEngine {
   constructor(localId, handlers) {
     this.localId = localId;
-    this.handlers = handlers; // { onRemoteCell, onRemoteLeave, onStatus, getLocalCell }
+    this.handlers = handlers; // { onRemoteCell, onRemoteLeave, onStatus, getLocalCells }
     this.roomCode = null;
     this.peer = null;
-    this.connections = new Map(); // peerId -> DataConnection
+    this.connections = new Map();
     this.isHost = false;
     this.remoteHumanIds = new Set();
 
-    // 1. Always initialize BroadcastChannel for instant local multi-tab testing
-    this.bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL_NAME) : null;
-    if (this.bc) {
-      this.bc.onmessage = (ev) => this.handleMessage(ev.data, "tab");
-      // Announce arrival so existing tabs reply with their cells
-      this.bc.postMessage({ type: "hello", sender: this.localId });
-    }
+    // Opt-in local multi-tab BroadcastChannel (OFF by default so blank sessions stay 100% blank!)
+    this.tabSyncEnabled = false;
+    this.bc = null;
 
     window.addEventListener("beforeunload", () => {
-      this.broadcast({ type: "leave", id: this.localId });
+      const locals = this.handlers.getLocalCells ? this.handlers.getLocalCells() : [];
+      for (const c of locals) {
+        this.broadcast({ type: "leave", id: c.id });
+      }
     });
   }
 
+  setTabSync(enabled) {
+    this.tabSyncEnabled = Boolean(enabled);
+    if (this.tabSyncEnabled && !this.bc && typeof BroadcastChannel !== "undefined") {
+      this.bc = new BroadcastChannel(CHANNEL_NAME);
+      this.bc.onmessage = (ev) => this.handleMessage(ev.data, "tab");
+      this.bc.postMessage({ type: "hello", sender: this.localId });
+      this.emitStatus(this.roomCode ? `P2P: ${this.roomCode} + Multi-onglets` : "Multi-onglets actif", this.roomCode);
+    } else if (!this.tabSyncEnabled && this.bc) {
+      this.bc.close();
+      this.bc = null;
+      this.emitStatus(this.roomCode ? `P2P: ${this.roomCode}` : "Session isolée (solo)", this.roomCode);
+    }
+  }
+
   broadcast(payload) {
-    if (this.bc) {
+    if (this.bc && this.tabSyncEnabled) {
       this.bc.postMessage({ ...payload, sender: this.localId });
     }
     for (const conn of this.connections.values()) {
@@ -54,18 +68,14 @@ export class SyncEngine {
     if (!msg || msg.sender === this.localId) return;
 
     if (msg.type === "hello") {
-      const locals = this.handlers.getLocalCells
-        ? this.handlers.getLocalCells()
-        : this.handlers.getLocalCell
-        ? [this.handlers.getLocalCell()].filter(Boolean)
-        : [];
+      const locals = this.handlers.getLocalCells ? this.handlers.getLocalCells() : [];
       for (const local of locals) {
         const reply = {
           type: "cell",
           sender: this.localId,
           cell: { id: local.id, term: local.term, stance: local.stance, intensity: local.intensity || 1.0 },
         };
-        if (source === "tab" && this.bc) this.bc.postMessage(reply);
+        if (source === "tab" && this.bc && this.tabSyncEnabled) this.bc.postMessage(reply);
         if (fromConn && fromConn.open) fromConn.send(reply);
       }
       return;
@@ -75,12 +85,9 @@ export class SyncEngine {
       this.remoteHumanIds.add(msg.cell.id);
       this.handlers.onRemoteCell(msg.cell);
 
-      // If we are the P2P room hub, relay to other connected peers
       if (this.isHost && source === "p2p") {
-        for (const [pid, conn] of this.connections.entries()) {
-          if (conn !== fromConn && conn.open) {
-            conn.send(msg);
-          }
+        for (const conn of this.connections.values()) {
+          if (conn !== fromConn && conn.open) conn.send(msg);
         }
       }
       return;
@@ -97,9 +104,6 @@ export class SyncEngine {
     }
   }
 
-  /**
-   * Lazy-loads PeerJS only when joining/creating a P2P WebRTC room.
-   */
   async loadPeerJS() {
     if (window.Peer) return window.Peer;
     return new Promise((resolve, reject) => {
@@ -131,13 +135,12 @@ export class SyncEngine {
     let PeerCtor;
     try {
       PeerCtor = await this.loadPeerJS();
-    } catch (err) {
-      this.emitStatus("P2P offline (BroadcastChannel active)", null);
+    } catch {
+      this.emitStatus("P2P indisponible (hors-ligne)", null);
       this.roomCode = null;
       return false;
     }
 
-    // Strategy: try claiming the room host ID first; if taken, join as guest connecting to host.
     return new Promise((resolve) => {
       const hostAttempt = new PeerCtor(hostPeerId);
 
@@ -145,16 +148,12 @@ export class SyncEngine {
         this.peer = hostAttempt;
         this.isHost = true;
         this.emitStatus(`P2P Host: ${code} (0 peers)`, code);
-
-        hostAttempt.on("connection", (conn) => {
-          this.wireConnection(conn);
-        });
+        hostAttempt.on("connection", (conn) => this.wireConnection(conn));
         resolve(true);
       });
 
       hostAttempt.on("error", (err) => {
         if (err && err.type === "unavailable-id") {
-          // Room already exists -> connect as peer guest
           hostAttempt.destroy();
           const guest = new PeerCtor();
           this.peer = guest;
@@ -188,11 +187,7 @@ export class SyncEngine {
         this.roomCode
       );
       conn.send({ type: "hello", sender: this.localId });
-      const locals = this.handlers.getLocalCells
-        ? this.handlers.getLocalCells()
-        : this.handlers.getLocalCell
-        ? [this.handlers.getLocalCell()].filter(Boolean)
-        : [];
+      const locals = this.handlers.getLocalCells ? this.handlers.getLocalCells() : [];
       for (const local of locals) {
         conn.send({
           type: "cell",
@@ -202,9 +197,7 @@ export class SyncEngine {
       }
     });
 
-    conn.on("data", (data) => {
-      this.handleMessage(data, "p2p", conn);
-    });
+    conn.on("data", (data) => this.handleMessage(data, "p2p", conn));
 
     conn.on("close", () => {
       this.connections.delete(conn.peer);
@@ -226,12 +219,10 @@ export class SyncEngine {
     }
     this.roomCode = null;
     this.isHost = false;
-    this.emitStatus("BroadcastChannel actif (multi-onglets)", null);
+    this.emitStatus(this.tabSyncEnabled ? "Multi-onglets actif" : "Session isolée (solo)", null);
   }
 
   emitStatus(text, activeRoom) {
-    if (this.handlers.onStatus) {
-      this.handlers.onStatus(text, activeRoom);
-    }
+    if (this.handlers.onStatus) this.handlers.onStatus(text, activeRoom);
   }
 }

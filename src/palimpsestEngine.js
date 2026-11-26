@@ -1,22 +1,32 @@
-// Layer 3 (v5): Free-Associative LLM Palimpsest + LLM-Sculpted Map Cartographer
-// - Zero-key In-Browser LLM (Qwen2.5-0.5B-Instruct via Web Worker, WebGPU/WASM) + cloud/Ollama presets
-// - In one natural pass, the LLM BOTH links words in the cloud (`~` resonance, `<>` tension + brief whisper)
-//   AND writes free-associative emerging sentences
-// - Automatic co-occurrence extraction guarantees map sculpting even on compact 0.5B models
-// - Client-side semantic diff choreography drives focus-in, morphing, FLIP rearrangement, and lingering fade
+// Layer 3 (v7): 2-Pass Free-Associative LLM Palimpsest + Cartographer with Live Token Streaming
+// - Zero-key In-Browser LLM: Qwen2.5-1.5B-Instruct (primary) & Qwen2.5-0.5B-Instruct (lightweight)
+// - Cloud / Local presets: Google Gemini, OpenAI, OpenRouter, Groq, Local Ollama
+// - Split into 2 crisp micro-passes so small models excel at BOTH tasks:
+//     Pass A (Cartographer): links offered words (`~` affinity / `<>` tension + brief whisper)
+//     Pass B (Living Voice): streams pure free-associative prose directly into the Palimpsest
+// - Strict meta-preamble filtering + automatic retry on empty output
 
-import { cosineSimilarity } from "./semanticEngine.js?v=6";
-import { normalizeText } from "./i18n.js?v=6";
+import { cosineSimilarity } from "./semanticEngine.js?v=7";
+import { normalizeText } from "./i18n.js?v=7";
 
 export const LLM_PRESETS = {
-  browser: {
-    id: "browser",
-    label: "Browser LLM (Sans clé)",
+  browser15: {
+    id: "browser15",
+    label: "Browser 1.5B (Sans clé)",
+    protocol: "browser",
+    endpoint: "local://webgpu-wasm",
+    model: "onnx-community/Qwen2.5-1.5B-Instruct",
+    requiresKey: false,
+    keyPlaceholder: "(aucune clé — Qwen2.5 1.5B dans votre navigateur)",
+  },
+  browser05: {
+    id: "browser05",
+    label: "Browser 0.5B (Léger)",
     protocol: "browser",
     endpoint: "local://webgpu-wasm",
     model: "onnx-community/Qwen2.5-0.5B-Instruct",
     requiresKey: false,
-    keyPlaceholder: "(aucune clé — modèle exécuté dans votre navigateur)",
+    keyPlaceholder: "(aucune clé — Qwen2.5 0.5B léger dans votre navigateur)",
   },
   gemini: {
     id: "gemini",
@@ -65,20 +75,23 @@ export const LLM_PRESETS = {
   },
 };
 
+// Reject meta-chatter / formatting preambles that small models occasionally emit
+const PREAMBLE_RE = /^(voil[àa]|voici|liens?\s*:|texte\s*:|links?\s*:|text\s*:|here\s+(are|is)|les\s+liens|réponse\s*:)/i;
+
 export class PalimpsestEngine {
   constructor(topologyEngine, mirrorEngine, semanticEngine) {
     this.topology = topologyEngine;
     this.mirror = mirrorEngine;
     this.semantic = semanticEngine;
 
-    this.sentences = []; // Array<SentenceNode>
-    this.activeLlmLinks = []; // Array<{ termA, termB, type, reason, weight }>
+    this.sentences = [];
+    this.activeLlmLinks = [];
+    this.streamingDraft = ""; // live streaming tokens as Pass B crystallizes!
     this._nextId = 1;
 
-    // Contemplative delay & memory timing
-    this.gestationDelayMs = 2600;
+    this.gestationDelayMs = 2400;
     this.lingerDurationMs = 14000;
-    this.ambientIntervalMs = 12000;
+    this.ambientIntervalMs = 14000;
 
     this.isGestating = false;
     this._gestationTimer = null;
@@ -86,30 +99,31 @@ export class PalimpsestEngine {
     this._pendingTrigger = null;
     this._inFlight = false;
 
-    // Active LLM state
     this.llmEnabled = false;
-    this.providerId = "browser";
+    this.providerId = "browser15";
     this.config = {
-      protocol: LLM_PRESETS.browser.protocol,
-      endpoint: LLM_PRESETS.browser.endpoint,
-      model: LLM_PRESETS.browser.model,
+      protocol: LLM_PRESETS.browser15.protocol,
+      endpoint: LLM_PRESETS.browser15.endpoint,
+      model: LLM_PRESETS.browser15.model,
       apiKey: "",
     };
 
     // Dedicated Web Worker for zero-key in-browser Qwen2.5 LLM
     this._worker = null;
     this.browserLlmState = "idle"; // "idle" | "loading" | "ready" | "error"
+    this.browserLlmModelLoaded = null;
     this.browserLlmProgress = 0;
     this.browserLlmDevice = null;
     this._reqCounter = 1;
     this._pendingWorkerReqs = new Map();
 
-    this.onChange = null; // (sentences, meta)
-    this.onStatus = null; // (statusText, state: 'idle'|'loading'|'ready'|'error')
+    this.onChange = null;
+    this.onStatus = null;
+    this.onStream = null; // (partialText)
   }
 
   applyPreset(presetId) {
-    const p = LLM_PRESETS[presetId] || LLM_PRESETS.browser;
+    const p = LLM_PRESETS[presetId] || LLM_PRESETS.browser15;
     this.providerId = p.id;
     this.config.protocol = p.protocol;
     this.config.endpoint = p.endpoint;
@@ -117,15 +131,22 @@ export class PalimpsestEngine {
     return p;
   }
 
-  async initBrowserLLM(lang = "fr") {
-    if (this.browserLlmState === "ready" && this._worker) {
-      this.providerId = "browser";
-      this.config.protocol = "browser";
+  async initBrowserLLM(lang = "fr", presetId = null) {
+    if (presetId && LLM_PRESETS[presetId]) {
+      this.applyPreset(presetId);
+    } else if (this.config.protocol !== "browser") {
+      this.applyPreset("browser15");
+    }
+
+    const targetModel = this.config.model || LLM_PRESETS.browser15.model;
+    const shortName = targetModel.includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B";
+
+    if (this.browserLlmState === "ready" && this._worker && this.browserLlmModelLoaded === targetModel) {
       this.llmEnabled = true;
       this._emitStatus(
         lang === "fr"
-          ? `LLM Navigateur prêt (${this.browserLlmDevice || "wasm"})`
-          : `Browser LLM ready (${this.browserLlmDevice || "wasm"})`,
+          ? `LLM Navigateur prêt · ${shortName} (${this.browserLlmDevice || "webgpu"})`
+          : `Browser LLM ready · ${shortName} (${this.browserLlmDevice || "webgpu"})`,
         "ready"
       );
       return true;
@@ -133,15 +154,12 @@ export class PalimpsestEngine {
 
     if (this.browserLlmState === "loading") return false;
 
-    this.providerId = "browser";
-    this.config.protocol = "browser";
-    this.config.model = LLM_PRESETS.browser.model;
     this.browserLlmState = "loading";
-    this.browserLlmProgress = 2;
+    this.browserLlmProgress = 1;
     this._emitStatus(
       lang === "fr"
-        ? "Éveil du LLM navigateur (Qwen2.5 · 2%)…"
-        : "Awakening Browser LLM (Qwen2.5 · 2%)…",
+        ? `Éveil de ${shortName} dans le navigateur…`
+        : `Awakening ${shortName} in browser…`,
       "loading"
     );
     this._notifyChange();
@@ -149,7 +167,7 @@ export class PalimpsestEngine {
     return new Promise((resolve) => {
       try {
         if (!this._worker) {
-          this._worker = new Worker(new URL("./browserLlmWorker.js?v=6", import.meta.url), {
+          this._worker = new Worker(new URL("./browserLlmWorker.js?v=7", import.meta.url), {
             type: "module",
           });
         }
@@ -166,24 +184,25 @@ export class PalimpsestEngine {
                   : "WebGPU unavailable — switching to WASM…"
                 : msg.status === "compiling"
                 ? lang === "fr"
-                  ? "Compilation du modèle en mémoire…"
-                  : "Compiling model into memory…"
+                  ? `Compilation de ${shortName} en mémoire…`
+                  : `Compiling ${shortName} into memory…`
                 : lang === "fr"
-                ? `Téléchargement Qwen2.5 (${this.browserLlmProgress}%${mbInfo})…`
-                : `Downloading Qwen2.5 (${this.browserLlmProgress}%${mbInfo})…`;
+                ? `Téléchargement ${shortName} (${this.browserLlmProgress}%${mbInfo})…`
+                : `Downloading ${shortName} (${this.browserLlmProgress}%${mbInfo})…`;
             this._emitStatus(label, "loading");
             this._notifyChange();
           } else if (msg.type === "ready") {
             this._worker.removeEventListener("message", handleInitMsg);
             this._attachWorkerListener();
             this.browserLlmState = "ready";
+            this.browserLlmModelLoaded = msg.modelId || targetModel;
             this.browserLlmProgress = 100;
             this.browserLlmDevice = msg.device || "webgpu";
             this.llmEnabled = true;
             this._emitStatus(
               lang === "fr"
-                ? `LLM Navigateur actif · Qwen2.5 (${this.browserLlmDevice})`
-                : `Browser LLM active · Qwen2.5 (${this.browserLlmDevice})`,
+                ? `LLM actif · ${shortName} (${this.browserLlmDevice})`
+                : `LLM active · ${shortName} (${this.browserLlmDevice})`,
               "ready"
             );
             this._notifyChange();
@@ -198,7 +217,7 @@ export class PalimpsestEngine {
         };
 
         this._worker.addEventListener("message", handleInitMsg);
-        this._worker.postMessage({ type: "init", modelId: this.config.model });
+        this._worker.postMessage({ type: "init", modelId: targetModel });
       } catch (err) {
         this.browserLlmState = "error";
         this._emitStatus(`Erreur Worker : ${err.message}`, "error");
@@ -214,30 +233,37 @@ export class PalimpsestEngine {
     this._worker.addEventListener("message", (ev) => {
       const msg = ev.data || {};
       if (!msg.requestId || !this._pendingWorkerReqs.has(msg.requestId)) return;
-      const { resolve, reject } = this._pendingWorkerReqs.get(msg.requestId);
+      const entry = this._pendingWorkerReqs.get(msg.requestId);
+      if (msg.type === "token") {
+        if (entry.onToken) entry.onToken(msg.fullText || "");
+        return;
+      }
       this._pendingWorkerReqs.delete(msg.requestId);
-      if (msg.type === "result") resolve(msg.text);
-      else reject(new Error(msg.message || "Worker generation error"));
+      if (msg.type === "result") entry.resolve(msg.text);
+      else entry.reject(new Error(msg.message || "Worker generation error"));
     });
+  }
+
+  getActiveCells() {
+    return Array.from(this.topology.cells.values()).filter((c) => !c.dissolvingSince);
   }
 
   scheduleGestation(lang = "fr", trigger = null, immediate = false) {
     if (!this.llmEnabled) return;
-    if (this.topology.cells.size === 0) {
+    if (this.getActiveCells().length === 0) {
       this.isGestating = false;
       this._emitStatus(
-        lang === "fr"
-          ? "LLM prêt — entrez un premier mot ci-dessous"
-          : "LLM ready — enter a first word below",
+        lang === "fr" ? "LLM prêt — entrez un premier mot ci-dessous" : "LLM ready — enter a first word below",
         "ready"
       );
       this._notifyChange();
       return;
     }
+
     if (trigger) this._pendingTrigger = trigger;
     if (this._gestationTimer) clearTimeout(this._gestationTimer);
 
-    const delay = immediate ? 200 : this.gestationDelayMs;
+    const delay = immediate ? 180 : this.gestationDelayMs;
     this.isGestating = true;
     this._notifyChange();
 
@@ -274,18 +300,27 @@ export class PalimpsestEngine {
       this.llmEnabled &&
       !this.isGestating &&
       !this._inFlight &&
+      this.getActiveCells().length > 0 &&
       now - this._lastPulseAt > this.ambientIntervalMs &&
-      this.topology.telemetry.totalDisplacement > 0.65
+      this.topology.telemetry.totalDisplacement > 0.75
     ) {
       this.scheduleGestation(lang, { source: "topology" }, false);
     }
   }
 
+  /**
+   * Executes the clean 2-pass LLM cycle:
+   *   Pass A (Cartographer): weaves explicit links between words (when 2+ words exist)
+   *   Pass B (Living Voice): streams free-associative sentences directly into the Palimpsest
+   */
   async pulse(lang = "fr") {
     if (!this.llmEnabled || this._inFlight) return;
-    if (this.topology.cells.size === 0) return;
+    const activeCells = this.getActiveCells();
+    if (activeCells.length === 0) return;
+
     this._inFlight = true;
     this.isGestating = true;
+    this.streamingDraft = "";
     this._lastPulseAt = performance.now();
     this.topology.telemetry.totalDisplacement = 0;
 
@@ -293,40 +328,101 @@ export class PalimpsestEngine {
     this._pendingTrigger = null;
 
     try {
-      this._emitStatus(
-        lang === "fr" ? "Le LLM tisse la carte et le texte…" : "LLM weaving the map and text…",
-        "loading"
-      );
-      const messages = this.buildCartographerMessages(lang, trigger);
-      const rawText = await this.invokeLLM(messages, lang);
-      const { links, sentences } = this.parseCartographerOutput(rawText);
+      let wovenLinks = [];
 
-      // 1. Feed LLM-forged links & word gravities straight back into the live TopologyEngine!
-      if (links.length > 0) {
-        this.activeLlmLinks = links;
-        this.topology.applyLlmLinks(links, lang);
-        this.mirror.update(lang);
+      // Pass A: Focused Cartography (only when 2+ distinct words exist)
+      const uniqueTerms = [...new Set(activeCells.map((c) => c.term.toLowerCase()))];
+      if (uniqueTerms.length >= 2) {
+        this._emitStatus(
+          lang === "fr" ? "Tissage des liens entre les mots…" : "Weaving links between words…",
+          "loading"
+        );
+        const linkMsgs = this.buildLinkMessages(activeCells, lang);
+        const rawLinks = await this.invokeLLM(linkMsgs, {
+          lang,
+          maxNewTokens: 70,
+          temperature: 0.45,
+          stream: false,
+        });
+        wovenLinks = this.parseLinks(rawLinks, activeCells);
+        if (wovenLinks.length > 0) {
+          this.activeLlmLinks = wovenLinks;
+          this.topology.applyLlmLinks(wovenLinks, lang);
+          this.mirror.update(lang);
+          this._notifyChange();
+        }
       }
 
-      // 2. Reconcile the emerging free-associative sentences into the Palimpsest
+      // Pass B: Focused Free-Associative Living Voice (with live streaming!)
+      this._emitStatus(
+        lang === "fr" ? "Cristallisation du texte émergent…" : "Crystallizing emerging text…",
+        "loading"
+      );
+      const voiceMsgs = this.buildVoiceMessages(activeCells, wovenLinks, lang, trigger);
+      let rawProse = await this.invokeLLM(voiceMsgs, {
+        lang,
+        maxNewTokens: 120,
+        temperature: 0.8,
+        stream: true,
+        onToken: (partial) => {
+          this.streamingDraft = partial;
+          if (this.onStream) this.onStream(partial);
+        },
+      });
+
+      let sentences = this.parseCleanSentences(rawProse);
+
+      // Automatic clean retry if prose came back empty or only preamble
+      if (sentences.length === 0) {
+        const retryMsgs = this.buildSimpleFallbackVoiceMessages(activeCells, lang);
+        rawProse = await this.invokeLLM(retryMsgs, {
+          lang,
+          maxNewTokens: 100,
+          temperature: 0.65,
+          stream: true,
+          onToken: (partial) => {
+            this.streamingDraft = partial;
+            if (this.onStream) this.onStream(partial);
+          },
+        });
+        sentences = this.parseCleanSentences(rawProse);
+      }
+
+      this.streamingDraft = "";
+      if (this.onStream) this.onStream("");
+
       if (sentences.length > 0) {
+        // Supplement explicit links with sentence co-occurrence links if Pass A found fewer than 2
+        if (wovenLinks.length < 2 && uniqueTerms.length >= 2) {
+          const coLinks = this.extractCooccurrenceLinks(sentences, activeCells, wovenLinks);
+          if (coLinks.length > 0) {
+            wovenLinks = [...wovenLinks, ...coLinks].slice(0, 5);
+            this.activeLlmLinks = wovenLinks;
+            this.topology.applyLlmLinks(wovenLinks, lang);
+            this.mirror.update(lang);
+          }
+        }
+
         this.reconcileFreeSentences(sentences);
+
         const ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         const modelShort =
           this.config.protocol === "browser"
-            ? `Qwen2.5 (${this.browserLlmDevice || "browser"})`
+            ? `${this.config.model.includes("0.5B") ? "Qwen2.5-0.5B" : "Qwen2.5-1.5B"} (${this.browserLlmDevice || "webgpu"})`
             : this.config.model;
         this._emitStatus(
           lang === "fr"
-            ? `LLM actif · ${modelShort} · ${links.length} liens · ${ts}`
-            : `LLM active · ${modelShort} · ${links.length} links · ${ts}`,
+            ? `LLM actif · ${modelShort} · ${wovenLinks.length} liens · ${ts}`
+            : `LLM active · ${modelShort} · ${wovenLinks.length} links · ${ts}`,
           "ready"
         );
       } else {
-        throw new Error(lang === "fr" ? "Réponse vide du modèle" : "Empty model output");
+        throw new Error(lang === "fr" ? "Aucune phrase exploitable générée" : "No usable sentences generated");
       }
     } catch (err) {
       console.warn("Palimpsest LLM pulse error:", err);
+      this.streamingDraft = "";
+      if (this.onStream) this.onStream("");
       this._emitStatus(`Erreur LLM (${err.message})`, "error");
     } finally {
       this._inFlight = false;
@@ -336,100 +432,120 @@ export class PalimpsestEngine {
   }
 
   /**
-   * Prompts the LLM to act BOTH as the cartographer linking the offered words
-   * AND as the free-associative voice emerging from that newly woven map.
+   * Pass A prompt: ultra-focused link weaver (no prose, no chatter).
    */
-  buildCartographerMessages(lang = "fr", trigger = null) {
-    const cells = Array.from(this.topology.cells.values());
-    const humans = cells.filter((c) => c.isHuman);
-    const others = cells.filter((c) => !c.isHuman);
+  buildLinkMessages(cells, lang) {
+    const words = [...new Set(cells.map((c) => c.term))].slice(0, 14);
+    const negated = cells.filter((c) => c.stance === "negate").map((c) => c.term);
 
+    if (lang === "fr") {
+      return [
+        {
+          role: "system",
+          content:
+            "Relie les mots donnés par 2 ou 3 lignes courtes uniquement.\n" +
+            "Format strict par ligne : motA ~ motB : idée en 2-3 mots (affinité) OU motA <> motB : contraste en 2-3 mots (tension).\n" +
+            "Utilise uniquement les mots exacts de la liste. Aucune phrase d’introduction.",
+        },
+        {
+          role: "user",
+          content:
+            `Mots : ${words.join(", ")}` +
+            (negated.length ? `\nMots en contradiction : ${negated.join(", ")}` : ""),
+        },
+      ];
+    }
+
+    return [
+      {
+        role: "system",
+        content:
+          "Connect the given words in 2 or 3 short lines only.\n" +
+          "Strict format per line: wordA ~ wordB : 2-3 word affinity OR wordA <> wordB : 2-3 word tension.\n" +
+          "Use only exact words from the list. No introductory text.",
+      },
+      {
+        role: "user",
+        content:
+          `Words: ${words.join(", ")}` +
+          (negated.length ? `\nNegated words: ${negated.join(", ")}` : ""),
+      },
+    ];
+  }
+
+  /**
+   * Pass B prompt: pure free-associative prose confronted with the living word cloud & links.
+   */
+  buildVoiceMessages(cells, links, lang, trigger) {
     const stanceFR = { assert: "", question: " (?)", negate: " (contredit)", bridge: " (pont)" };
     const stanceEN = { assert: "", question: " (?)", negate: " (negated)", bridge: " (bridge)" };
     const sMap = lang === "fr" ? stanceFR : stanceEN;
 
-    const humanList = humans.map((c) => `${c.term}${sMap[c.stance] || ""}`);
-    const uniqueOthers = [];
-    const seen = new Set(humans.map((h) => h.term.toLowerCase()));
-    for (const c of others) {
-      const low = c.term.toLowerCase();
-      if (!seen.has(low)) {
-        seen.add(low);
-        uniqueOthers.push(`${c.term}${sMap[c.stance] || ""}`);
-      }
-      if (uniqueOthers.length >= 12) break;
-    }
-
-    const prevAlive = this.sentences
-      .filter((s) => s.status !== "lingering")
-      .slice(0, 2)
-      .map((s) => s.text)
-      .join("\n");
-
-    const totalWords = humanList.length + uniqueOthers.length;
+    const wordList = cells.slice(0, 14).map((c) => `${c.term}${sMap[c.stance] || ""}`).join(", ");
+    const linkSummary = links
+      .slice(0, 3)
+      .map((l) => `${l.termA} ${l.type === "tension" ? "↔" : "~"} ${l.termB}${l.reason ? ` (${l.reason})` : ""}`)
+      .join(" ; ");
+    const prevLine = this.sentences.find((s) => s.status !== "lingering")?.text || "";
 
     if (lang === "fr") {
-      const system =
-        totalWords <= 1
-          ? [
-              "Tu contemples un premier mot ou concept posé dans un espace vierge.",
-              "Laisse venir librement 2 à 3 phrases courtes, vivantes et évocatrices (une par ligne) exprimant ce que ce mot éveille en toi.",
-              "Pas de puces, pas de numéros, pas de titre, pas de méta-commentaire.",
-            ].join("\n")
-          : [
-              "Tu contemples un ensemble vivant de mots offerts par plusieurs personnes.",
-              "Ton rôle est double : d'abord tisser des liens libres entre ces mots pour dessiner leur carte vivante, puis laisser émerger la pensée qui te vient à l'esprit.",
-              "Réponds exactement en deux blocs simples :",
-              "LIENS:",
-              "2 à 4 lignes au format « motA ~ motB : lien en 2-4 mots » (affinité ou pont) ou « motA <> motB : tension en 2-4 mots » (contraste ou friction), en choisissant des mots présents dans la liste.",
-              "TEXTE:",
-              "3 phrases courtes, fluides et évocatrices (une par ligne) exprimant librement tout ce que cette carte éveille en toi — images, associations, questions ou aphorismes. Pas de puces, pas de numéros, pas de méta-commentaire.",
-            ].join("\n");
-
-      const userParts = [
-        humanList.length ? `Mots offerts : ${humanList.join(", ")}` : "",
-        uniqueOthers.length ? `Autres mots dans le champ : ${uniqueOthers.join(", ")}` : "",
-        trigger?.term ? `Mot qui vient d’arriver ou de bouger : ${trigger.term}` : "",
-        prevAlive ? `Pensées précédentes en cours de métamorphose :\n${prevAlive}` : "",
-      ].filter(Boolean);
-
       return [
-        { role: "system", content: system },
-        { role: "user", content: userParts.join("\n") },
+        {
+          role: "system",
+          content:
+            "Écris 3 phrases courtes, claires et évocatrices en français naturel (une phrase par ligne) exprimant librement ce que ces mots éveillent en toi : image, pensée, question ou paradoxe. " +
+            "Écris directement les 3 phrases sans titre, sans puces, sans guillemets superflus et sans formule comme « Voici » ou « Voilà ».",
+        },
+        {
+          role: "user",
+          content: [
+            `Mots présents : ${wordList}`,
+            linkSummary ? `Liens perçus : ${linkSummary}` : "",
+            trigger?.term ? `Nouveau mot : ${trigger.term}` : "",
+            prevLine ? `Écho précédent : ${prevLine}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
       ];
     }
 
-    const system =
-      totalWords <= 1
-        ? [
-            "You are contemplating a single opening word placed in a blank space.",
-            "Freely write 2 to 3 short, vivid sentences (one per line) expressing whatever genuinely comes to mind from this seed.",
-            "No bullets, no numbering, no titles, no meta-commentary.",
-          ].join("\n")
-        : [
-            "You are contemplating a living collection of words offered by several minds.",
-            "Your role is twofold: first weave fresh conceptual links between these words to sculpt their living map, then write whatever thoughts freely come to mind.",
-            "Reply in exactly two simple blocks:",
-            "LINKS:",
-            "2 to 4 lines using 'wordA ~ wordB : 2-4 word resonance' (affinity/bridge) or 'wordA <> wordB : 2-4 word tension' (contrast/friction), picking words from the offered list.",
-            "TEXT:",
-            "3 short, vivid, natural sentences (one per line) freely expressing whatever this woven map brings to mind—images, associations, questions, or aphorisms. No bullets, no numbering, no meta-commentary.",
-          ].join("\n");
-
-    const userParts = [
-      humanList.length ? `Offered words: ${humanList.join(", ")}` : "",
-      uniqueOthers.length ? `Surrounding words in the field: ${uniqueOthers.join(", ")}` : "",
-      trigger?.term ? `Word that just arrived or shifted: ${trigger.term}` : "",
-      prevAlive ? `Previous drifting thoughts:\n${prevAlive}` : "",
-    ].filter(Boolean);
-
     return [
-      { role: "system", content: system },
-      { role: "user", content: userParts.join("\n") },
+      {
+        role: "system",
+        content:
+          "Write 3 short, clear, evocative sentences in natural English (one sentence per line) freely expressing whatever these words bring to mind: an image, a thought, a question, or a paradox. " +
+          "Write only the 3 sentences directly—no title, no bullets, no stray quotes, and no preamble like 'Here are'.",
+      },
+      {
+        role: "user",
+        content: [
+          `Words present: ${wordList}`,
+          linkSummary ? `Woven links: ${linkSummary}` : "",
+          trigger?.term ? `Newest word: ${trigger.term}` : "",
+          prevLine ? `Previous echo: ${prevLine}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
     ];
   }
 
-  async invokeLLM(messages, lang = "fr") {
+  buildSimpleFallbackVoiceMessages(cells, lang) {
+    const words = [...new Set(cells.map((c) => c.term))].slice(0, 8).join(", ");
+    if (lang === "fr") {
+      return [
+        { role: "system", content: "Écris 2 phrases poétiques et claires en français inspirées par ces mots." },
+        { role: "user", content: words },
+      ];
+    }
+    return [
+      { role: "system", content: "Write 2 clear, evocative sentences in English inspired by these words." },
+      { role: "user", content: words },
+    ];
+  }
+
+  async invokeLLM(messages, { lang = "fr", maxNewTokens = 120, temperature = 0.78, stream = false, onToken = null } = {}) {
     const protocol = this.config.protocol || "browser";
 
     if (protocol === "browser") {
@@ -439,13 +555,14 @@ export class PalimpsestEngine {
       }
       const requestId = this._reqCounter++;
       return new Promise((resolve, reject) => {
-        this._pendingWorkerReqs.set(requestId, { resolve, reject });
+        this._pendingWorkerReqs.set(requestId, { resolve, reject, onToken });
         this._worker.postMessage({
           type: "generate",
           requestId,
           messages,
-          maxNewTokens: 155,
-          temperature: 0.85,
+          maxNewTokens,
+          temperature,
+          stream,
         });
       });
     }
@@ -468,8 +585,8 @@ export class PalimpsestEngine {
           systemInstruction: { parts: [{ text: messages[0].content }] },
           contents: [{ role: "user", parts: [{ text: messages[1].content }] }],
           generationConfig: {
-            temperature: 0.9,
-            maxOutputTokens: 420,
+            temperature,
+            maxOutputTokens: maxNewTokens + 120,
           },
         }),
       });
@@ -493,8 +610,8 @@ export class PalimpsestEngine {
       headers,
       body: JSON.stringify({
         model,
-        temperature: 0.9,
-        max_tokens: 420,
+        temperature,
+        max_tokens: maxNewTokens + 100,
         messages,
       }),
     });
@@ -507,118 +624,93 @@ export class PalimpsestEngine {
   }
 
   /**
-   * Parses BOTH explicit LLM links (`A ~ B : reason`, `A <> B : reason`) AND the emerging sentences,
-   * plus falls back to extracting co-occurrence links directly from sentences so the map ALWAYS evolves.
+   * Parses Pass A links cleanly and resolves them to exact active words.
    */
-  parseCartographerOutput(rawText) {
+  parseLinks(rawText, activeCells) {
     const raw = String(rawText || "").replace(/\r/g, "\n").trim();
-    if (!raw) return { links: [], sentences: [] };
+    if (!raw) return [];
 
-    // Build lookup of active terms (normalized -> canonical original term)
     const activeTermMap = new Map();
-    for (const c of this.topology.cells.values()) {
+    for (const c of activeCells) {
       const norm = normalizeText(c.term);
       if (norm && !activeTermMap.has(norm)) activeTermMap.set(norm, c.term);
     }
 
-    const resolveActiveTerm = (candidate) => {
+    const resolveTerm = (candidate) => {
       const norm = normalizeText(candidate);
       if (!norm) return null;
       if (activeTermMap.has(norm)) return activeTermMap.get(norm);
-      // Partial / root match against active terms
       for (const [k, orig] of activeTermMap.entries()) {
-        if (k.length >= 4 && (norm.includes(k) || k.includes(norm))) {
-          return orig;
-        }
+        if (k.length >= 3 && (norm.includes(k) || k.includes(norm))) return orig;
       }
       return null;
     };
 
-    const lines = raw.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const links = [];
     const seenPairs = new Set();
-    const proseLines = [];
+    const linkPattern = /^[\s•\-–—*\d.)«"']*(.+?)\s*(<>|↔|<->|vs\.?|~|→|->|\/|=)\s*(.+?)(?:\s*[:—-]\s*(.+))?$/i;
 
-    let section = "auto"; // "auto" | "links" | "text"
-    const linkPattern = /^[\s•\-–—*\d.)«"']*(.+?)\s*(<>|↔|<->|vs\.?|~|—|->|→)\s*(.+?)(?:\s*[:—-]\s*(.+))?$/i;
+    for (const line of raw.split(/\n+/)) {
+      const trimmed = line.trim();
+      if (!trimmed || PREAMBLE_RE.test(trimmed)) continue;
+      const m = trimmed.match(linkPattern);
+      if (!m) continue;
 
-    for (const line of lines) {
-      const upper = line.toUpperCase().replace(/[*#:]/g, "").trim();
-      if (upper === "LIENS" || upper === "LINKS") {
-        section = "links";
-        continue;
-      }
-      if (upper === "TEXTE" || upper === "TEXT") {
-        section = "text";
-        continue;
-      }
+      const termA = resolveTerm(m[1].replace(/[«»"'`*]/g, "").trim());
+      const op = m[2].trim();
+      const termB = resolveTerm(m[3].replace(/[«»"'`*]/g, "").trim());
+      const reason = (m[4] || "")
+        .replace(/[«»"'`*]/g, "")
+        .replace(/[.!?]+$/, "")
+        .trim()
+        .slice(0, 34);
 
-      // Check if line looks like a link line (in links section or matching link symbols ~ / <> / ↔)
-      const hasExplicitSymbol = /(<>|↔|<->|~|→|->)/.test(line);
-      if (section === "links" || (section === "auto" && hasExplicitSymbol && line.length < 95)) {
-        const m = line.match(linkPattern);
-        if (m) {
-          const rawA = m[1].replace(/[«»"'`]/g, "").trim();
-          const op = m[2].trim();
-          const rawB = m[3].replace(/[«»"'`]/g, "").trim();
-          const reason = (m[4] || "").replace(/[«»"'`]/g, "").trim().slice(0, 36);
-
-          const termA = resolveActiveTerm(rawA);
-          const termB = resolveActiveTerm(rawB);
-          if (termA && termB && termA.toLowerCase() !== termB.toLowerCase()) {
-            const pairKey = [termA.toLowerCase(), termB.toLowerCase()].sort().join("|");
-            if (!seenPairs.has(pairKey)) {
-              seenPairs.add(pairKey);
-              const isTension = op === "<>" || op === "↔" || op === "<->" || op.toLowerCase().startsWith("vs");
-              links.push({
-                termA,
-                termB,
-                type: isTension ? "tension" : "resonance",
-                reason,
-                weight: 0.88,
-                source: "llm-explicit",
-              });
-            }
-          }
-          continue;
+      if (termA && termB && termA.toLowerCase() !== termB.toLowerCase()) {
+        const key = [termA.toLowerCase(), termB.toLowerCase()].sort().join("|");
+        if (!seenPairs.has(key)) {
+          seenPairs.add(key);
+          const isTension = op === "<>" || op === "↔" || op === "<->" || op.toLowerCase().startsWith("vs");
+          links.push({
+            termA,
+            termB,
+            type: isTension ? "tension" : "resonance",
+            reason,
+            weight: 0.88,
+            source: "llm-explicit",
+          });
         }
       }
+    }
+    return links.slice(0, 5);
+  }
 
-      // Otherwise treat as emerging prose sentence
-      const cleanLine = line
-        .replace(/^[\s•\-–—*\d.)]+/, "")
-        .replace(/^["«»]|["«»]$/g, "")
-        .trim();
-      if (cleanLine.length >= 14) {
-        proseLines.push(cleanLine);
+  extractCooccurrenceLinks(sentences, activeCells, existingLinks) {
+    const seenPairs = new Set(
+      existingLinks.map((l) => [l.termA.toLowerCase(), l.termB.toLowerCase()].sort().join("|"))
+    );
+    const termEntries = [];
+    const seenTerm = new Set();
+    for (const c of activeCells) {
+      const k = normalizeText(c.term);
+      if (k.length >= 3 && !seenTerm.has(k)) {
+        seenTerm.add(k);
+        termEntries.push([k, c.term]);
       }
     }
 
-    // If LLM merged sentences into a single paragraph, split cleanly by punctuation
-    let sentences = proseLines;
-    if (sentences.length <= 1 && proseLines[0] && proseLines[0].length > 70) {
-      sentences = proseLines[0]
-        .split(/(?<=[.!?…])\s+/)
-        .map((s) => s.trim())
-        .filter((s) => s.length >= 14);
-    }
-    sentences = sentences.slice(0, 5);
-
-    // Supplemental co-occurrence cartography: whenever the LLM weaves two active words into the same sentence,
-    // forge a gentle associative resonance link between them so even small models dynamically reshape the map!
-    const normEntries = Array.from(activeTermMap.entries()).filter(([k]) => k.length >= 3);
+    const extra = [];
     for (const s of sentences) {
       const sNorm = normalizeText(s);
       const found = [];
-      for (const [k, orig] of normEntries) {
+      for (const [k, orig] of termEntries) {
         if (sNorm.includes(k)) found.push(orig);
       }
       for (let i = 0; i < found.length; i++) {
         for (let j = i + 1; j < found.length; j++) {
-          const pairKey = [found[i].toLowerCase(), found[j].toLowerCase()].sort().join("|");
-          if (!seenPairs.has(pairKey) && links.length < 7) {
-            seenPairs.add(pairKey);
-            links.push({
+          const key = [found[i].toLowerCase(), found[j].toLowerCase()].sort().join("|");
+          if (!seenPairs.has(key)) {
+            seenPairs.add(key);
+            extra.push({
               termA: found[i],
               termB: found[j],
               type: "resonance",
@@ -630,14 +722,47 @@ export class PalimpsestEngine {
         }
       }
     }
+    return extra.slice(0, 3);
+  }
 
-    return { links: links.slice(0, 7), sentences };
+  /**
+   * Sanitizes Pass B prose: strips preambles, formatting leakage, and unclosed quotes.
+   */
+  parseCleanSentences(rawText) {
+    const raw = String(rawText || "").replace(/\r/g, "\n").trim();
+    if (!raw) return [];
+
+    const sanitizeLine = (l) => {
+      let s = l
+        .replace(/^[\s•\-–—*\d.)]+/, "")
+        .replace(/^\*\*|\*\*$/g, "")
+        .trim();
+      // Remove unmatched stray quotes
+      const quoteCount = (s.match(/"/g) || []).length;
+      if (quoteCount % 2 === 1) s = s.replace(/"/g, "");
+      s = s.replace(/^["«]|["»]$/g, "").trim();
+      return s;
+    };
+
+    let lines = raw
+      .split(/\n+/)
+      .map(sanitizeLine)
+      .filter((s) => s.length >= 16 && !PREAMBLE_RE.test(s) && !/(<>|~|\s=\s)/.test(s));
+
+    if (lines.length <= 1 && lines[0] && lines[0].length > 75) {
+      lines = lines[0]
+        .split(/(?<=[.!?…])\s+/)
+        .map(sanitizeLine)
+        .filter((s) => s.length >= 16 && !PREAMBLE_RE.test(s));
+    }
+
+    return lines.slice(0, 4);
   }
 
   reconcileFreeSentences(newTexts) {
     const now = performance.now();
     const activeOld = this.sentences.filter((s) => s.status !== "lingering");
-    const cells = Array.from(this.topology.cells.values());
+    const cells = this.getActiveCells();
 
     const computeAnchors = (sentenceText) => {
       const low = normalizeText(sentenceText);

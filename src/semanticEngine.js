@@ -3,7 +3,7 @@
 // - Deterministic perceptual chromatic signature (hue) per conceptual orientation
 // - Instant mode (<2ms) + optional browser-native neural embeddings via @xenova/transformers
 
-import { POLARITY_PAIRS, normalizeText } from "./i18n.js?v=6";
+import { POLARITY_PAIRS, normalizeText } from "./i18n.js?v=7";
 
 // 24 conceptual semantic dimensions (each maps stems/roots -> signed weights)
 export const SEMANTIC_AXES = [
@@ -49,10 +49,10 @@ export const SEMANTIC_AXES = [
     pos: ["flux", "flow", "devenir", "becom", "metamorph", "mouvement", "mov", "vague", "wave", "courant", "derive", "drift", "change", "mutat", "transit", "passag", "liquide", "fluide"],
     neg: ["cristal", "crystal", "fix", "stabl", "statu", "fige", "solid", "structur", "form", "cadre", "frame", "grille", "grid", "architec", "monument", "inert"],
   },
-  // 6
+  // 6 (deep violet-indigo hue so crimson remains exclusively reserved for Contredire / dialectical tension)
   {
     name: { fr: ["entropie", "néguentropie"], en: ["entropy", "negentropy"] },
-    hue: 342,
+    hue: 284,
     pos: ["entrop", "chaos", "bruit", "nois", "desordr", "disord", "hasard", "random", "vertig", "abim", "abyss", "dissol", "fragment", "crise", "crash", "turbul"],
     neg: ["neguentrop", "negentrop", "ordre", "order", "simplic", "coheren", "harmon", "clarte", "clarity", "equilibr", "balanc", "symetr", "gestalt", "unite", "unity", "cosmos"],
   },

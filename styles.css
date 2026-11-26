@@ -122,9 +122,9 @@ body.mode-palimpsest #noetic-canvas {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 5px;
 }
 
 .segmented {
@@ -141,11 +141,12 @@ body.mode-palimpsest #noetic-canvas {
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 500;
-  padding: 5px 10px;
+  padding: 5px 8px;
   border-radius: 10px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
@@ -157,16 +158,17 @@ body.mode-palimpsest #noetic-canvas {
 .pill-btn, .icon-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 11px;
+  gap: 5px;
+  height: 31px;
+  padding: 0 9px;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-family: var(--font-sans);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   backdrop-filter: blur(14px);
   transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
@@ -462,6 +464,74 @@ body.mode-palimpsest #noetic-canvas {
   color: var(--accent-cyan);
   min-width: 36px;
   text-align: right;
+}
+
+.onboard-secondary-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.link-sep {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.pal-streaming {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.06rem;
+  line-height: 1.5;
+  color: rgba(186, 230, 253, 0.82);
+  padding: 6px 14px;
+  border-left: 2px solid rgba(125, 211, 252, 0.45);
+  filter: blur(0.35px);
+}
+
+.pal-streaming::after {
+  content: "▍";
+  margin-left: 3px;
+  color: var(--accent-cyan);
+  animation: pulse 0.8s infinite alternate;
+}
+
+.free-key-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.free-key-links a {
+  color: var(--accent-cyan);
+  text-decoration: none;
+}
+
+.free-key-links a:hover {
+  text-decoration: underline;
+}
+
+.voice-chip.dissolving {
+  opacity: 0.36;
+  filter: blur(0.6px);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+.voice-capacity {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  padding: 2px 5px;
+}
+
+body.inspector-open .noeme-mirror {
+  left: calc(50% - 140px);
+  max-width: min(500px, calc(100vw - 520px));
 }
 
 .pal-stream {

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./styles.css?v=6" />
+  <link rel="stylesheet" href="./styles.css?v=7" />
 </head>
 <body>
   <!-- Full-bleed Underlying Noetic Substrate Canvas -->
@@ -90,11 +90,17 @@
       <div class="pal-onboard-actions">
         <button type="button" class="awaken-btn" id="btn-awaken-browser-llm">
           <span>✦</span>
-          <span data-i18n="palAwakenBtn">Éveiller le LLM navigateur (Qwen2.5 · gratuit, sans clé)</span>
+          <span data-i18n="palAwakenBtn">Éveiller Qwen2.5-1.5B dans le navigateur (gratuit, sans clé)</span>
         </button>
-        <button type="button" class="link-btn" id="btn-open-external-llm" data-i18n="palExternalLink">
-          ou connecter Gemini / OpenAI / Ollama →
-        </button>
+        <div class="onboard-secondary-row">
+          <button type="button" class="link-btn" id="btn-awaken-browser-05" data-i18n="palAwakenLight">
+            version légère 0.5B
+          </button>
+          <span class="link-sep">·</span>
+          <button type="button" class="link-btn" id="btn-open-external-llm" data-i18n="palExternalLink">
+            connecter Gemini / Groq / OpenAI / Ollama →
+          </button>
+        </div>
       </div>
       <div class="pal-progress-wrap hidden" id="pal-progress-wrap">
         <div class="pal-progress-bar"><div class="pal-progress-fill" id="pal-progress-fill"></div></div>
@@ -104,6 +110,9 @@
 
     <!-- Living Sentences Container (FLIP animated rearrangement, focus-in, morph, linger, fade) -->
     <div class="pal-stream hidden" id="pal-stream"></div>
+
+    <!-- Live Token Streaming Preview (shows thoughts crystallizing word-by-word) -->
+    <p class="pal-streaming hidden" id="pal-streaming"></p>
 
     <!-- Subtle Status & Quick LLM Switcher Pill -->
     <div class="pal-footer">
@@ -178,6 +187,11 @@
       <input type="range" id="slider-tempo" min="1" max="10" step="1" value="5" />
       <span class="mono" id="label-tempo-val">5</span>
     </div>
+    <div class="field-row">
+      <label for="slider-capacity" data-i18n="entropyCapacity">Entropie (max mots)</label>
+      <input type="range" id="slider-capacity" min="5" max="24" step="1" value="12" />
+      <span class="mono" id="label-capacity-val">12</span>
+    </div>
     <div class="popover-actions">
       <button id="btn-swarm-pause" class="action-btn" data-i18n="pause">Pause</button>
       <button id="btn-swarm-pulse" class="action-btn" data-i18n="swarmPerturb">Bifurquer</button>
@@ -193,6 +207,10 @@
     <p class="popover-desc" data-i18n="roomDesc">
       Les onglets ouverts sur cet appareil sont synchronisés instantanément. Créez ou rejoignez une salle P2P (WebRTC) pour expérimenter à plusieurs sans serveur.
     </p>
+    <label class="checkbox-row">
+      <input type="checkbox" id="check-tab-sync" />
+      <span data-i18n="tabSyncLabel">Synchroniser les onglets de cet appareil (BroadcastChannel)</span>
+    </label>
     <div class="field-stack">
       <label for="input-room-code" data-i18n="roomCode">Code de salle P2P</label>
       <div class="inline-group">
@@ -205,7 +223,7 @@
       <button id="btn-room-copy" class="action-btn hidden" data-i18n="roomCopy">Copier le lien</button>
       <button id="btn-room-leave" class="action-btn hidden" data-i18n="roomLeave">Quitter P2P</button>
     </div>
-    <p class="status-line mono" id="room-status">BroadcastChannel actif (multi-onglets)</p>
+    <p class="status-line mono" id="room-status">Session isolée (solo)</p>
   </section>
 
   <!-- Popover: Multi-Provider LLM Palimpsest Engine -->
@@ -220,11 +238,12 @@
 
     <!-- 1-Click Provider Presets -->
     <div class="preset-grid" role="group" aria-label="LLM Provider Presets">
-      <button type="button" class="preset-btn active" data-preset="browser">Browser (Sans clé)</button>
+      <button type="button" class="preset-btn active" data-preset="browser15">1.5B (Sans clé)</button>
+      <button type="button" class="preset-btn" data-preset="browser05">0.5B (Léger)</button>
       <button type="button" class="preset-btn" data-preset="gemini">Gemini</button>
+      <button type="button" class="preset-btn" data-preset="groq">Groq</button>
       <button type="button" class="preset-btn" data-preset="openai">OpenAI</button>
       <button type="button" class="preset-btn" data-preset="openrouter">OpenRouter</button>
-      <button type="button" class="preset-btn" data-preset="groq">Groq</button>
       <button type="button" class="preset-btn" data-preset="ollama">Ollama</button>
     </div>
 
@@ -234,11 +253,17 @@
     </div>
     <div class="field-stack">
       <label for="input-llm-model" data-i18n="llmModel">Modèle</label>
-      <input type="text" id="input-llm-model" value="onnx-community/Qwen2.5-0.5B-Instruct" />
+      <input type="text" id="input-llm-model" value="onnx-community/Qwen2.5-1.5B-Instruct" />
     </div>
     <div class="field-stack" id="field-llm-key">
       <label for="input-llm-key" data-i18n="llmKey">Clé API (stockée uniquement dans ce navigateur)</label>
       <input type="password" id="input-llm-key" placeholder="(aucune clé — exécuté dans votre navigateur)" autocomplete="off" />
+      <div class="free-key-links">
+        <span data-i18n="freeKeyHint">Clé cloud rapide &amp; gratuite :</span>
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini</a>
+        ·
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>
+      </div>
     </div>
 
     <div class="field-row">
@@ -282,7 +307,7 @@
           maxlength="34"
           spellcheck="false"
           autocomplete="off"
-          placeholder="Entrez un mot ou concept (Entrée ajoute une voix)..."
+          placeholder="Ajouter un mot ou concept…"
           aria-label="Concept input"
         />
         <span class="token-counter mono" id="token-counter">0/3</span>
@@ -332,6 +357,6 @@
   <!-- Subtle Toast Notification -->
   <div class="toast hidden" id="toast"></div>
 
-  <script type="module" src="./src/main.js?v=6"></script>
+  <script type="module" src="./src/main.js?v=7"></script>
 </body>
 </html>

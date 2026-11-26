@@ -4,7 +4,7 @@
 // - Mosaic Mode: true edge-to-edge Olivier Auber square spiral mosaic with chromatic resonance fields
 //   and glowing/fractured shared neighbor membranes
 
-import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=6";
+import { MOSAIC_TILE_W, MOSAIC_TILE_H } from "./topologyEngine.js?v=7";
 
 const STANCE_META = {
   assert: { glyph: "●", color: "#7dd3fc" },
@@ -221,9 +221,11 @@ export class NoeticRenderer {
     const sources = cells.map((c) => {
       const hue = c.hue != null ? c.hue : 200;
       const [r, g, b] = hslToRgb(hue, 0.78, 0.56);
+      const cellAlpha = c.alpha != null ? c.alpha : 1;
       const weight =
-        (c.intensity || 1.0) * (c.isLocal ? 1.35 : c.isHuman ? 1.15 : 0.85) +
-        (c.llmGravity || 0) * 0.65;
+        ((c.intensity || 1.0) * (c.isLocal ? 1.35 : c.isHuman ? 1.15 : 0.85) +
+          (c.llmGravity || 0) * 0.65) *
+        cellAlpha;
       return { x: c.x, y: c.y, r, g, b, weight };
     });
 
@@ -327,13 +329,13 @@ export class NoeticRenderer {
       WORLD_MAX_Y - WORLD_MIN_Y
     );
 
-    // Extract & render crisp Marching-Squares topographic isolines
+    // Extract & render crisp Marching-Squares topographic isolines (stronger outer contrast)
     for (let li = 0; li < CONTOUR_LEVELS.length; li++) {
       const level = CONTOUR_LEVELS[li];
       ctx.beginPath();
       this.traceContours(ctx, scalar, level, stepX, stepY);
-      ctx.strokeStyle = `rgba(186, 230, 253, ${(0.08 + li * 0.045) * alpha})`;
-      ctx.lineWidth = li === 2 ? 1.2 : 0.85;
+      ctx.strokeStyle = `rgba(186, 230, 253, ${(0.12 + li * 0.055) * alpha})`;
+      ctx.lineWidth = li === 2 ? 1.25 : 0.9;
       ctx.stroke();
     }
 
@@ -708,6 +710,8 @@ export class NoeticRenderer {
       const recentGlow = age < 1400 ? 1 - age / 1400 : 0;
 
       ctx.save();
+      const cellAlpha = c.alpha != null ? c.alpha : 1;
+      ctx.globalAlpha = cellAlpha;
       ctx.font = c.isHuman
         ? '600 13px "Space Grotesk", sans-serif'
         : '400 12px "Inter", sans-serif';
@@ -775,12 +779,11 @@ export class NoeticRenderer {
         ctx.fillText(`#${c.spiralIndex}`, c.x + w / 2 - 8, c.y - h / 2 + 13);
 
         ctx.fillStyle = c.isHuman ? "#ffffff" : "#eef2ff";
-        ctx.font = c.isHuman
-          ? '600 12.5px "Space Grotesk", sans-serif'
-          : '500 11.5px "Inter", sans-serif';
+        // Auto-fit font size in Mosaïque tiles so long concepts never clip with "..."
+        const fitSize = c.term.length > 16 ? 9.5 : c.term.length > 12 ? 10.5 : 12.2;
+        ctx.font = `${c.isHuman ? 600 : 500} ${fitSize}px "Space Grotesk", sans-serif`;
         ctx.textAlign = "center";
-        const clipped = c.term.length > 14 ? `${c.term.slice(0, 13)}…` : c.term;
-        ctx.fillText(clipped, c.x, c.y + 6);
+        ctx.fillText(c.term, c.x, c.y + 6);
       } else {
         // Floating typographic concept directly on the potential terrain (scales gently with LLM gravity!)
         const gravBoost = (c.llmGravity || 0) > 0.25;
@@ -858,13 +861,13 @@ export class NoeticRenderer {
     ctx.textAlign = "right";
     ctx.fillText(`${compass.east.toUpperCase()} →`, this.width - 18, this.height * 0.52);
 
-    // North & South (Principal Axis 2)
+    // North & South (Principal Axis 2 — positioned safely below the Noème banner so they never clip)
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(`↑ ${compass.north.toUpperCase()}`, this.width / 2, 136);
+    ctx.fillText(`↑ ${compass.north.toUpperCase()}`, this.width / 2, 166);
 
     ctx.textBaseline = "bottom";
-    ctx.fillText(`↓ ${compass.south.toUpperCase()}`, this.width / 2, this.height - 156);
+    ctx.fillText(`↓ ${compass.south.toUpperCase()}`, this.width / 2, this.height - 178);
 
     ctx.restore();
   }
